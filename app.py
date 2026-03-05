@@ -18,8 +18,15 @@ load_dotenv()
 st.set_page_config(page_title="Vaccine Pipeline Platform", page_icon="💉", layout="wide")
 
 DEFAULT_LLM_MODEL = "models/gemini-robotics-er-1.5-preview"  # or use your robotics model
-MAX_TRIALS_FOR_SUMMARY = 12
+MAX_TRIALS_FOR_SUMMARY = 10  # how many trials to summarize per call (keep moderate for latency)
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+
+# Available Gemini models (user-selectable via sidebar)
+GEMINI_MODEL_OPTIONS = {
+    "Robotics 1.5 Preview (default)": DEFAULT_LLM_MODEL,
+    "Gemini 1.5 Pro (general analysis)": "models/gemini-1.5-pro-latest",
+    "Gemini 1.5 Flash (fast, cheaper)": "models/gemini-1.5-flash-latest",
+}
 
 # Enhanced data extraction helpers
 def _extract_enrollment(study):
@@ -384,8 +391,19 @@ def _call_gemini(messages, model=None, max_tokens=900, temperature=0.25):
     if not api_key:
         return None, err
 
-    # Get model name
-    model_name = model or _get_secret("GEMINI_MODEL") or os.getenv("GEMINI_MODEL") or DEFAULT_LLM_MODEL
+    # Get model name (priority: explicit arg -> sidebar selection -> secrets/env -> default)
+    ui_model = None
+    try:
+        ui_model = st.session_state.get("gemini_model")
+    except Exception:
+        ui_model = None
+    model_name = (
+        model
+        or ui_model
+        or _get_secret("GEMINI_MODEL")
+        or os.getenv("GEMINI_MODEL")
+        or DEFAULT_LLM_MODEL
+    )
     
     # Convert OpenAI-style messages to Gemini format
     contents = []
@@ -424,23 +442,26 @@ def _call_gemini(messages, model=None, max_tokens=900, temperature=0.25):
     }
 
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        # Slightly lower read timeout so we fail fast on slow free-tier responses
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
         resp.raise_for_status()
         data = resp.json()
-        
+
         # Extract response from Gemini format
         candidates = data.get("candidates", [])
         if not candidates:
             return None, "No response from Gemini"
-        
+
         content = candidates[0].get("content", {})
         parts = content.get("parts", [])
         if not parts:
             return None, "Empty response from Gemini"
-        
+
         text = parts[0].get("text", "")
         return text, None
-        
+
+    except requests.Timeout:
+        return None, "Gemini request timed out. Try again, use a smaller filter set, or switch to a faster model (e.g., Flash)."
     except requests.HTTPError as e:
         try:
             err_json = resp.json()
@@ -498,11 +519,14 @@ Your role is to synthesize complex clinical trial data into actionable executive
 BD teams, and medical affairs professionals.
 
 Your summaries must be:
-- Factual and evidence-based (cite specific NCT IDs and data points)
+- Factual and evidence-based (always ground claims in specific NCT IDs and data points)
 - Strategic (highlight competitive positioning, regulatory implications, market timing)
 - Actionable (provide clear next steps for business development)
 - Risk-aware (identify potential regulatory, safety, or competitive risks)
 - Concise but comprehensive (executive-level detail without overwhelming)
+
+When you make a concrete statement (e.g., 'most RSV trials are Phase 3' or 'enrollment is slowing'),
+back it up by citing 1–3 example NCT IDs in parentheses, like (e.g., NCT01234567, NCT08976543).
 
 Focus on: phase progression signals, enrollment trends, sponsor competitive landscape, regulatory timeline implications, 
 and strategic opportunities or threats."""
@@ -549,7 +573,7 @@ Format the response in clear, professional language suitable for C-suite present
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        max_tokens=5000,
+        max_tokens=3500,
         temperature=0.3
     )
 
@@ -639,6 +663,126 @@ Format professionally with clear sections and bullet points where appropriate.""
         temperature=0.3
     )
 
+def _fetch_wikipedia_summary(term: str, lang: str = "en") -> str | None:
+    """
+    Fetch a short encyclopedic summary for a vaccine or disease from Wikipedia.
+    This is used only as high-level context for Gemini and is optional.
+    """
+    if not term:
+        return None
+    try:
+        import urllib.parse
+        title = urllib.parse.quote(term.strip().replace(" ", "_"))
+        url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{title}"
+        resp = requests.get(url, headers={"User-Agent": "VaccinePipeline/1.0"}, timeout=10)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        extract = data.get("extract")
+        return extract
+    except Exception:
+        return None
+
+def _vaccine_intel_summary(
+    vaccine_name: str,
+    manufacturer: str | None,
+    diseases: list[str],
+    vaccine_trials: list[dict],
+    competitor_trials: list[dict],
+    external_context: str | None,
+):
+    """
+    High-level Gemini intelligence brief combining:
+    - Product metadata (name, manufacturer, diseases)
+    - ClinicalTrials.gov trials for this product
+    - Competitor vaccine trials in same diseases
+    - Optional external encyclopedic context (e.g., Wikipedia)
+    """
+    if not vaccine_trials and not competitor_trials:
+        return None, "No trials to analyze for this vaccine yet."
+
+    # Keep context reasonably sized for free-tier latency
+    max_self = 20
+    max_comp = 20
+    self_trials = vaccine_trials[:max_self]
+    comp_trials = competitor_trials[:max_comp]
+
+    payload = {
+        "vaccine_name": vaccine_name,
+        "manufacturer": manufacturer,
+        "target_diseases": diseases,
+        "vaccine_trials": self_trials,
+        "competitor_trials": comp_trials,
+        "external_context": external_context,
+    }
+
+    system_prompt = """
+You are a senior vaccine market and clinical development intelligence analyst.
+Your audience is vaccine strategy, BD, and medical affairs leaders.
+You combine structured clinical trial data (including NCT IDs) with high‑level background context
+to produce actionable, up‑to‑date insights about a specific vaccine product
+and its competitive landscape.
+
+Your responses must be:
+- Fact‑focused and analytical (no hype)
+- Clear about what comes from clinicaltrials.gov data vs general background
+- Explicit about uncertainties or missing data
+
+When you assert a directional or quantitative insight (e.g., "GSK appears as a top sponsor
+for Abrysvo despite Pfizer being the originator"), explicitly reference 1–3 supporting
+NCT IDs in parentheses taken from the provided trial lists.
+"""
+
+    user_prompt = f"""
+Prepare an integrated intelligence brief for the vaccine product "{vaccine_name}".
+Data payload (JSON, partially abbreviated for length; all NCT IDs are real trials from clinicaltrials.gov):
+{json.dumps(payload, indent=2, default=str)}
+
+Please structure your answer as:
+
+## 1. PRODUCT OVERVIEW
+- Brief description of the vaccine (type, indication[s]) using any available context.
+- Mention manufacturer / originator if known.
+
+## 2. CLINICAL DEVELOPMENT LANDSCAPE
+- Summarize the current trial footprint for this product (phases, status mix, geographies if visible).
+- Highlight key sponsors running trials (note: sponsors may differ from manufacturer).
+- Explicitly discuss any divergence between originator/manufacturer and top sponsors, and explain scenarios
+  like head‑to‑head or real‑world studies where competitors (e.g., GSK) or academic centers run trials that
+  still use this product.
+- In this section, whenever you describe a pattern (e.g., "most trials are Phase 3 and completed"), cite
+  example NCT IDs in parentheses, such as (e.g., NCT01234567, NCT08976543).
+
+## 3. COMPETITOR VACCINES
+- Identify notable competitor vaccines from the competitor_trials list (by product name and sponsor).
+- Compare approximate development stage (phases and status) of this product vs key competitors.
+
+## 4. MARKET / REGULATORY CONTEXT (HIGH-LEVEL)
+- Using external_context only as high‑level background, describe approval or launch status
+  (e.g., approved, under review, still developmental) if that is clearly indicated.
+- If information is ambiguous or missing, say so instead of guessing.
+
+## 5. STRATEGIC TAKEAWAYS
+- 3–5 concise bullets for how a user of a vaccine intelligence platform could use this information
+  (e.g., prioritizing indications, watching certain competitors, data gaps to track).
+
+## 6. KEY TRIAL ANNEX (NCT IDs)
+- Provide a bullet list of 8–15 of the most informative trials (mix of this product and key competitors).
+- For each trial, include at least: NCT ID, main vaccine(s), phase, status, and lead sponsor.
+
+Be explicit about what is inferred primarily from clinicaltrials.gov trial metadata vs general background.
+Do NOT fabricate specific approval dates, exact sales numbers, or unpublished outcomes.
+"""
+
+    return _call_gemini(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=3500,
+        temperature=0.35,
+    )
+
 def _extract_vaccine_names(study) -> list:
     """Collect intervention names + otherNames + armGroup interventionNames."""
     proto = (study or {}).get("protocolSection", {}) or {}
@@ -661,6 +805,174 @@ def _extract_vaccine_names(study) -> list:
                 names.add(nm.strip())
 
     return sorted(names)
+
+def _matches_vaccine_name(names, target_norms) -> bool:
+    """
+    True if the normalized target name matches any intervention name
+    exactly or as a standalone token (not just arbitrary substring).
+    """
+    if isinstance(target_norms, str):
+        target_norms = [target_norms]
+    target_norms = [t for t in (target_norms or []) if t]
+    if not target_norms:
+        return False
+    for raw in names or []:
+        norm = _norm_txt(raw)
+        if not norm:
+            continue
+        tokens = set(norm.split())
+        for t in target_norms:
+            if norm == t or t in tokens:
+                return True
+    return False
+
+# Minimal curated synonym + manufacturer sets for major vaccines.
+_VACCINE_SYNONYM_GROUPS = [
+    # Pfizer / BioNTech – COVID-19
+    [
+        "Comirnaty",
+        "BNT162b2",
+        "Tozinameran",
+        "Pfizer-BioNTech COVID-19 vaccine",
+        "Pfizer-BioNTech mRNA COVID-19 vaccine",
+    ],
+    # Moderna – COVID-19
+    [
+        "Spikevax",
+        "mRNA-1273",
+        "mRNA 1273",
+        "Elasomeran",
+        "Moderna COVID-19 vaccine",
+    ],
+    # Pfizer – RSV
+    [
+        "Abrysvo",
+        "RSVpreF",
+        "RSVpreF3",
+        "bivalent RSVpreF3",
+        "Pfizer RSVpreF vaccine",
+    ],
+    # GSK – RSV
+    [
+        "Arexvy",
+        "respiratory syncytial virus vaccine recombinant adjuvanted",
+        "GSK RSV vaccine",
+    ],
+    # Pfizer – pneumococcal
+    [
+        "Prevnar 13",
+        "Prevenar 13",
+        "13-valent pneumococcal conjugate vaccine",
+        "PCV13",
+    ],
+    [
+        "Prevnar 20",
+        "20-valent pneumococcal conjugate vaccine",
+        "PCV20",
+    ],
+]
+
+_VACCINE_MANUFACTURER_DATA = {
+    "Pfizer": [
+        "Comirnaty",
+        "BNT162b2",
+        "Tozinameran",
+        "Abrysvo",
+        "RSVpreF",
+        "RSVpreF3",
+        "Prevnar 13",
+        "Prevenar 13",
+        "13-valent pneumococcal conjugate vaccine",
+        "PCV13",
+        "Prevnar 20",
+        "20-valent pneumococcal conjugate vaccine",
+        "PCV20",
+    ],
+    "BioNTech": [
+        "Comirnaty",
+        "BNT162b2",
+        "Tozinameran",
+    ],
+    "Moderna": [
+        "Spikevax",
+        "mRNA-1273",
+        "mRNA 1273",
+        "Elasomeran",
+        "Moderna COVID-19 vaccine",
+    ],
+    "GSK": [
+        "Arexvy",
+        "respiratory syncytial virus vaccine recombinant adjuvanted",
+        "GSK RSV vaccine",
+    ],
+}
+
+def _build_vaccine_synonym_index():
+    idx = {}
+    for group in _VACCINE_SYNONYM_GROUPS:
+        for name in group:
+            norm = _norm_txt(name)
+            if not norm:
+                continue
+            if norm not in idx:
+                idx[norm] = set()
+            for other in group:
+                idx[norm].add(other)
+    return {k: sorted(list(v)) for k, v in idx.items()}
+
+def _build_vaccine_manufacturer_index():
+    idx = {}
+    for mfr, names in _VACCINE_MANUFACTURER_DATA.items():
+        for name in names:
+            norm = _norm_txt(name)
+            if not norm:
+                continue
+            # Prefer first mapping if collisions ever occur
+            idx.setdefault(norm, mfr)
+    return idx
+
+_VACCINE_SYNONYM_INDEX = _build_vaccine_synonym_index()
+_VACCINE_MANUFACTURER_INDEX = _build_vaccine_manufacturer_index()
+
+def _get_vaccine_search_terms(raw_name: str) -> list:
+    """
+    Return a list of intervention search terms for a vaccine, including
+    curated synonyms (brand name, code, INN) where available.
+    """
+    base = (raw_name or "").strip()
+    if not base:
+        return []
+    norm = _norm_txt(base)
+    extra = _VACCINE_SYNONYM_INDEX.get(norm, [])
+    seen = set()
+    terms = []
+    for t in [base] + extra:
+        t = t.strip()
+        if not t:
+            continue
+        key = t.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        terms.append(t)
+    return terms
+
+def _get_vaccine_manufacturer(raw_name: str):
+    """Return a single primary manufacturer name for a vaccine, if known."""
+    if not raw_name:
+        return None
+    # Try direct norm lookup
+    norm = _norm_txt(raw_name)
+    if norm in _VACCINE_MANUFACTURER_INDEX:
+        return _VACCINE_MANUFACTURER_INDEX[norm]
+    # Try through synonyms
+    syns = _VACCINE_SYNONYM_INDEX.get(norm, [])
+    for s in syns:
+        s_norm = _norm_txt(s)
+        mfr = _VACCINE_MANUFACTURER_INDEX.get(s_norm)
+        if mfr:
+            return mfr
+    return None
 
 def _mesh_terms_intervention(study) -> list:
     """Return MeSH terms for interventions (used to detect vaccines)."""
@@ -1023,7 +1335,9 @@ def create_sponsor_chart(df: pd.DataFrame, top_n=10):
         fig = px.bar(x=sponsor_counts.values, y=sponsor_counts.index, 
                     orientation='h', title=f"Top {top_n} Sponsors",
                     labels={'x': 'Number of Trials', 'y': 'Sponsor'})
+        # Force integer tick marks so counts never appear as fractional
         fig.update_layout(height=400)
+        fig.update_xaxes(dtick=1, rangemode="tozero")
         return fig
     except ImportError:
         return None
@@ -1031,6 +1345,16 @@ def create_sponsor_chart(df: pd.DataFrame, top_n=10):
 # ---------------- Main UI ----------------
 st.title("💉 Vaccine Pipeline Platform")
 st.markdown("Explore complete vaccine trial data from ClinicalTrials.gov. Search by disease condition or vaccine product name with competitor analysis.")
+
+# Sidebar: Gemini model selection (single control for all intelligence features)
+st.sidebar.markdown("### 🧠 Gemini model")
+model_label = st.sidebar.selectbox(
+    "Model for all AI summaries",
+    options=list(GEMINI_MODEL_OPTIONS.keys()),
+    index=0,
+    key="gemini_model_label",
+)
+st.session_state["gemini_model"] = GEMINI_MODEL_OPTIONS.get(model_label, DEFAULT_LLM_MODEL)
 
 # Ensure state keys exist
 for k in ["studies", "vaccine_trials", "competitor_trials", "target_vaccine", "target_diseases"]:
@@ -1253,22 +1577,28 @@ with tab2:
         if not vaccine_name.strip():
             st.warning("Please enter a vaccine name.")
         else:
-            target_norm = _norm_txt(vaccine_name)
             search_url = "https://clinicaltrials.gov/api/v2/studies"
 
             try:
                 with st.spinner(f"Step 1/2: Finding trials for '{vaccine_name}'..."):
-                    params = {"query.term": vaccine_name, "pageSize": 100}
-                    data = _request_json(search_url, params=params)
-                    studies = data.get("studies", []) or []
+                    search_terms = _get_vaccine_search_terms(vaccine_name)
+                    if not search_terms:
+                        search_terms = [vaccine_name]
+                    target_norms = [_norm_txt(t) for t in search_terms if _norm_txt(t)]
 
                     vaccine_results = []
                     all_diseases = []
+                    seen_nct = set()
 
-                    for s in studies:
-                        names = _extract_vaccine_names(s)
-                        names_norm = " || ".join(_norm_txt(n) for n in names)
-                        if target_norm and (target_norm in names_norm or any(_norm_txt(n) == target_norm for n in names)):
+                    for term in search_terms:
+                        params = {"query.intr": term, "pageSize": 100}
+                        data = _request_json(search_url, params=params)
+                        studies = data.get("studies", []) or []
+
+                        for s in studies:
+                            names = _extract_vaccine_names(s)
+                            if not _matches_vaccine_name(names, target_norms):
+                                continue
                             if not _is_vaccine_study(s):
                                 continue
                             proto = s.get("protocolSection", {}) or {}
@@ -1277,19 +1607,21 @@ with tab2:
                             status = proto.get("statusModule", {}) or {}
                             sponsor = proto.get("sponsorCollaboratorsModule", {}) or {}
                             nct_id = ident.get("nctId")
-                            if nct_id:
-                                vaccine_results.append({
-                                    "NCT ID": str(nct_id),
-                                    "Title": str(ident.get("briefTitle") or ident.get("officialTitle") or "No title"),
-                                    "Phase": ", ".join(design.get("phases") or ["Not reported"]),
-                                    "Status": str(status.get("overallStatus") or "Unknown"),
-                                    "Sponsor": str(sponsor.get("leadSponsor", {}).get("name", "Unknown")),
-                                    "Vaccines": ", ".join(names) if names else "Not reported"
-                                })
-                                ds = []
-                                ds.extend(proto.get("conditionsModule", {}).get("conditions", []) or [])
-                                ds.extend(_mesh_terms_condition(s))
-                                all_diseases.extend(ds)
+                            if not nct_id or nct_id in seen_nct:
+                                continue
+                            seen_nct.add(nct_id)
+                            vaccine_results.append({
+                                "NCT ID": str(nct_id),
+                                "Title": str(ident.get("briefTitle") or ident.get("officialTitle") or "No title"),
+                                "Phase": ", ".join(design.get("phases") or ["Not reported"]),
+                                "Status": str(status.get("overallStatus") or "Unknown"),
+                                "Sponsor": str(sponsor.get("leadSponsor", {}).get("name", "Unknown")),
+                                "Vaccines": ", ".join(names) if names else "Not reported"
+                            })
+                            ds = []
+                            ds.extend(proto.get("conditionsModule", {}).get("conditions", []) or [])
+                            ds.extend(_mesh_terms_condition(s))
+                            all_diseases.extend(ds)
 
                     st.session_state["target_vaccine"] = vaccine_name
                     st.session_state["vaccine_trials"] = vaccine_results
@@ -1308,7 +1640,7 @@ with tab2:
                             trials = fetch_all_vaccine_trials(d, max_pages=5)
                             for t in trials:
                                 vacc_norm = _norm_txt(t.get("Vaccines", ""))
-                                if target_norm and (target_norm in vacc_norm):
+                                if any(tn and (tn in vacc_norm) for tn in target_norms):
                                     continue
                                 nct = t.get("NCT ID")
                                 if nct and nct not in seen:
@@ -1334,21 +1666,44 @@ with tab2:
     if vaccine_trials:
         st.markdown("---")
         st.subheader(f"🎯 Your Vaccine: {target_vaccine}")
+        meta_bits = []
         if target_diseases:
-            st.caption(f"Primary Disease(s): {', '.join(target_diseases)}")
+            meta_bits.append(f"Primary Disease(s): {', '.join(target_diseases)}")
+        mfr = _get_vaccine_manufacturer(target_vaccine)
+        if mfr:
+            meta_bits.append(f"Originator/Manufacturer: {mfr}")
+        if meta_bits:
+            st.caption(" | ".join(meta_bits))
 
         df_vaccine = pd.DataFrame(vaccine_trials)
+
+        # Classify sponsor type relative to originator (if known)
+        mfr_norm = _norm_txt(mfr) if (isinstance(mfr, str) and mfr) else None
+        if mfr_norm:
+            def _sponsor_type(name: str) -> str:
+                n = _norm_txt(name or "")
+                return "Originator / Manufacturer" if mfr_norm and mfr_norm in n else "External / Other"
+            df_vaccine["Sponsor Type"] = df_vaccine["Sponsor"].apply(_sponsor_type)
 
         # Sidebar filters for YOUR vaccine trials (Tab 2)
         st.sidebar.header("🎛️ Vaccine Filters")
         phase_options_v = sorted({p.strip() for val in df_vaccine["Phase"].dropna() for p in str(val).split(",")})
         status_options_v = sorted([s for s in df_vaccine["Status"].dropna().unique()])
+        sponsor_scope_options = ["All sponsors"]
+        if "Sponsor Type" in df_vaccine.columns:
+            sponsor_scope_options.append("Originator-sponsored only")
 
         selected_phases_v = st.sidebar.multiselect(
             "Phase (Your Vaccine)", options=phase_options_v, default=phase_options_v, key="phase_filter_vaccine"
         )
         selected_status_v = st.sidebar.multiselect(
             "Status (Your Vaccine)", options=status_options_v, default=status_options_v, key="status_filter_vaccine"
+        )
+        sponsor_scope = st.sidebar.selectbox(
+            "Sponsor scope (Your Vaccine)",
+            options=sponsor_scope_options,
+            index=0,
+            key="sponsor_scope_vaccine",
         )
 
         def _row_has_phase_v(ph_str: str, selected: list) -> bool:
@@ -1358,6 +1713,8 @@ with tab2:
         df_vaccine_filtered = df_vaccine[df_vaccine["Phase"].apply(lambda x: _row_has_phase_v(x, selected_phases_v))]
         if selected_status_v:
             df_vaccine_filtered = df_vaccine_filtered[df_vaccine_filtered["Status"].isin(selected_status_v)]
+        if sponsor_scope == "Originator-sponsored only" and "Sponsor Type" in df_vaccine_filtered.columns:
+            df_vaccine_filtered = df_vaccine_filtered[df_vaccine_filtered["Sponsor Type"] == "Originator / Manufacturer"]
 
         st.info(f"📊 Showing {len(df_vaccine_filtered)} of {len(df_vaccine)} trials")
         
@@ -1368,29 +1725,36 @@ with tab2:
         
         show_df(df_vaccine_filtered, height=320)
 
-        if st.button("🧠 Summarize Your Vaccine Trials", key="summarize_vaccine_trials"):
-            with st.spinner("Generating AI summary for your vaccine..."):
-                vacc_summary, vacc_err = _summarize_trials_with_llm(
-                    df_vaccine_filtered.to_dict("records"),
-                    context_instructions=f"Target vaccine: {target_vaccine}. Top diseases: {', '.join(target_diseases) if target_diseases else 'Unknown'}."
+        # Gemini-powered unified vaccine intelligence (single combined entry point)
+        if st.button("🧠 Unified Vaccine Intelligence (Gemini)", key="vaccine_intel"):
+            with st.spinner("Generating unified Gemini intelligence brief..."):
+                mfr_for_llm = _get_vaccine_manufacturer(target_vaccine)
+                wiki_ctx = _fetch_wikipedia_summary(target_vaccine)
+                # Use the filtered set for tighter, faster context
+                intel_text, intel_err = _vaccine_intel_summary(
+                    vaccine_name=target_vaccine,
+                    manufacturer=mfr_for_llm,
+                    diseases=target_diseases or [],
+                    vaccine_trials=df_vaccine_filtered.to_dict("records"),
+                    competitor_trials=competitor_trials,
+                    external_context=wiki_ctx,
                 )
-            if vacc_summary:
-                st.markdown("#### 🤖 AI Summary — Your Vaccine")
-                st.write(vacc_summary)
-                
-                # Export button
-                pdf_buffer = generate_pdf_summary(vacc_summary, f"Vaccine Summary - {target_vaccine}")
+            if intel_text:
+                st.markdown("#### 🤖 Unified Vaccine Intelligence (Gemini)")
+                st.write(intel_text)
+
+                pdf_buffer = generate_pdf_summary(intel_text, f"Vaccine Intelligence - {target_vaccine}")
                 if pdf_buffer:
                     st.download_button(
-                        label="📄 Download PDF Report",
+                        label="📄 Download Gemini Intelligence PDF",
                         data=pdf_buffer,
-                        file_name=f"vaccine_summary_{target_vaccine.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        file_name=f"vaccine_intel_{target_vaccine.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
                         mime="application/pdf",
-                        key=f"pdf_vaccine_{target_vaccine}",
-                        use_container_width=True
+                        key=f"pdf_vaccine_intel_{target_vaccine}",
+                        use_container_width=True,
                     )
-            elif vacc_err:
-                st.warning(vacc_err)
+            elif intel_err:
+                st.warning(intel_err)
 
         selected_vaccine_id = st.selectbox(
             "🔬 View Detailed Info",
