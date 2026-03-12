@@ -114,6 +114,54 @@ def _extract_results_summary(study):
         "adverse_events": adverse.get("events", [])
     }
 
+def _fetch_pubmed_articles_for_trial(nct_id: str, trial_data: dict) -> list:
+    """Fetch PubMed publications using explicit PMIDs from the trial record, with fallback to search."""
+    try:
+        pmids = []
+        # First try to get explicit PMIDs from the clinical trial record's reference modules
+        proto = trial_data.get("protocolSection", {}) or {}
+        refs_mod = proto.get("referencesModule", {}) or {}
+        for ref in refs_mod.get("references", []):
+            if ref.get("pmid"):
+                pmids.append(str(ref["pmid"]))
+                
+        # Remove duplicates while preserving order
+        pmids = list(dict.fromkeys(pmids))
+        
+        # If no explicit PMIDs found, fallback to searching PubMed for the NCT ID
+        if not pmids:
+            search_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={nct_id}&retmode=json"
+            search_data = _request_json(search_url, timeout=10)
+            pmids = search_data.get("esearchresult", {}).get("idlist", [])
+            
+        if not pmids:
+            return []
+        
+        pmids = pmids[:5]
+        id_str = ",".join(pmids)
+        summary_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={id_str}&retmode=json"
+        summary_data = _request_json(summary_url, timeout=10)
+        
+        articles = []
+        result = summary_data.get("result", {})
+        for pmid in pmids:
+            if pmid in result:
+                meta = result[pmid]
+                title = meta.get("title", "No title")
+                if title:
+                    # Clean up random html-like encoding sometimes from PubMed
+                    title = title.replace("&lt;", "<").replace("&gt;", ">").replace("<i>", "").replace("</i>", "")
+                articles.append({
+                    "pmid": pmid,
+                    "title": title,
+                    "source": meta.get("source", ""),
+                    "pubdate": meta.get("pubdate", ""),
+                    "authors": [a.get("name", "") for a in meta.get("authors", [])][:3]
+                })
+        return articles
+    except Exception:
+        return []
+
 # ---------------- Export Functions ----------------
 def generate_pdf_summary(summary_text: str, title: str = "Vaccine Pipeline Summary"):
     """Generate professionally formatted PDF from summary text."""
@@ -597,7 +645,8 @@ def _summarize_single_trial(nct_id: str, details: dict):
         "design": details.get("Design"),
         "eligibility": details.get("Eligibility"),
         "collaborators": details.get("Collaborators"),
-        "has_results": details.get("Results") is not None
+        "has_results": details.get("Results") is not None,
+        "pubmed_articles": details.get("PubMed_Articles", [])
     }
 
     system_prompt = """You are a senior clinical development analyst preparing a comprehensive due-diligence brief 
@@ -645,6 +694,9 @@ Structure your brief as follows:
 
 ## REGULATORY & COMPETITIVE CONTEXT
 [Assess: regulatory pathway implications, competitive positioning, market timing]
+
+## PUBLISHED LITERATURE
+[Summarize any findings from the provided PubMed articles. Focus on conclusions relevant to efficacy/safety if available.]
 
 ## RISK ASSESSMENT
 [Identify: potential safety concerns, study limitations, data gaps, regulatory risks]
@@ -907,6 +959,30 @@ _VACCINE_MANUFACTURER_DATA = {
     ],
 }
 
+LEARNED_MFR_FILE = "learned_manufacturers.json"
+
+def _load_learned_manufacturers():
+    if os.path.exists(LEARNED_MFR_FILE):
+        try:
+            with open(LEARNED_MFR_FILE, 'r') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+LEARNED_MFRS = _load_learned_manufacturers()
+
+def _save_learned_manufacturer(vaccine_name, mfr):
+    learned = _load_learned_manufacturers()
+    norm = _norm_txt(vaccine_name)
+    if norm:
+        learned[norm] = mfr
+        try:
+            with open(LEARNED_MFR_FILE, 'w') as f:
+                json.dump(learned, f, indent=2)
+        except Exception:
+            pass
+
 def _build_vaccine_synonym_index():
     idx = {}
     for group in _VACCINE_SYNONYM_GROUPS:
@@ -929,6 +1005,11 @@ def _build_vaccine_manufacturer_index():
                 continue
             # Prefer first mapping if collisions ever occur
             idx.setdefault(norm, mfr)
+    
+    # Add dynamically learned mappings from LLM fallback
+    for norm, mfr in LEARNED_MFRS.items():
+        idx.setdefault(norm, mfr)
+        
     return idx
 
 _VACCINE_SYNONYM_INDEX = _build_vaccine_synonym_index()
@@ -957,8 +1038,22 @@ def _get_vaccine_search_terms(raw_name: str) -> list:
         terms.append(t)
     return terms
 
-def _get_vaccine_manufacturer(raw_name: str):
-    """Return a single primary manufacturer name for a vaccine, if known."""
+@st.cache_data(ttl=86400, show_spinner=False)
+def _infer_manufacturer_llm(vaccine_name: str) -> str:
+    """Use Gemini to dynamically infer the lead sponsor/originator of an unknown vaccine."""
+    system_prompt = "You are a pharmaceutical intelligence API. Given a vaccine pipeline name, return ONLY the name of the primary pharmaceutical company/originator that developed it. If you don't know, return exactly 'Unknown'. Do not add any conversational text or punctuation."
+    user_prompt = f"Vaccine name: {vaccine_name}"
+    mfr, err = _call_gemini([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ], model="models/gemini-1.5-flash-latest", temperature=0.0)
+    
+    if mfr and mfr.strip().lower() != "unknown":
+        return mfr.strip()
+    return None
+
+def _get_vaccine_manufacturer(raw_name: str, use_llm_fallback: bool = True):
+    """Return a single primary manufacturer name for a vaccine, falling back to LLM inference if unknown."""
     if not raw_name:
         return None
     # Try direct norm lookup
@@ -972,6 +1067,15 @@ def _get_vaccine_manufacturer(raw_name: str):
         mfr = _VACCINE_MANUFACTURER_INDEX.get(s_norm)
         if mfr:
             return mfr
+            
+    # LLM Dynamic Fallback
+    if use_llm_fallback:
+        inferred = _infer_manufacturer_llm(raw_name)
+        if inferred:
+            _save_learned_manufacturer(raw_name, inferred)
+            _VACCINE_MANUFACTURER_INDEX[_norm_txt(raw_name)] = inferred
+            return inferred
+        
     return None
 
 def _mesh_terms_intervention(study) -> list:
@@ -1049,72 +1153,21 @@ def _is_vaccine_study(study) -> bool:
 
     return False
 
-# ---------------- Safe table rendering ----------------
-def _cell_to_str(v) -> str:
-    if v is None:
-        return ""
-    try:
-        if pd.isna(v):
-            return ""
-    except Exception:
-        pass
-    if isinstance(v, (str, int, float, bool)):
-        return str(v)
-    if isinstance(v, (list, tuple, set)):
-        return ", ".join("" if (x is None or (isinstance(x, float) and pd.isna(x))) else str(x) for x in v)
-    if isinstance(v, dict):
-        return "; ".join(f"{k}: {v[k]}" for k in sorted(v.keys()))
-    return str(v)
-
-def df_to_arrow_utf8_table(df: pd.DataFrame):
-    """Convert any DataFrame to a PyArrow Table with all columns utf8 strings."""
-    import pyarrow as pa
-    df = df.copy()
-    df.columns = [str(c) for c in df.columns]
-    data = {c: pa.array([_cell_to_str(v) for v in df[c].tolist()], type=pa.string()) for c in df.columns}
-    return pa.table(data)
-
-def df_normalize_str(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize to string dtype for st.table or legacy paths."""
-    df = df.copy()
-    df.columns = [str(c) for c in df.columns]
-    for c in df.columns:
-        df[c] = df[c].map(_cell_to_str).astype("string[python]")
-    df.reset_index(drop=True, inplace=True)
-    return df
-
 def show_df(df: pd.DataFrame, height: int = 420):
     """Render an interactive table robustly across Streamlit/Arrow versions."""
-    safe_df = df_normalize_str(df)
+    # Convert all columns to pure strings to completely bypass PyArrow schema inference errors
+    safe_df = df.copy()
+    for col in safe_df.columns:
+        safe_df[col] = safe_df[col].apply(lambda x: "" if pd.isna(x) else str(x))
 
-    # 1) Prefer explicit Arrow Table with utf8 strings
     try:
-        table = df_to_arrow_utf8_table(safe_df)
-    except Exception as e:
-        table = None
-
-    # 2) Try new API (width='stretch'); then old API; then numeric width; then fallback to pandas; then st.table
-    try:
-        if table is not None:
-            if _supports_width_string():
-                st.dataframe(table, width="stretch", height=height)
-            else:
-                st.dataframe(table, use_container_width=True, height=height)
+        if _supports_width_string():
+            st.dataframe(safe_df, width="stretch", height=height)
         else:
-            if _supports_width_string():
-                st.dataframe(safe_df, width="stretch", height=height)
-            else:
-                st.dataframe(safe_df, use_container_width=True, height=height)
-    except Exception:
-        try:
-            # Try numeric width if this build insists on an int
-            if table is not None:
-                st.dataframe(table, width=1200, height=height)
-            else:
-                st.dataframe(safe_df, width=1200, height=height)
-        except Exception as e2:
-            st.warning(f"Interactive table failed: {e2}. Showing static table instead.")
-            st.table(safe_df)
+            st.dataframe(safe_df, use_container_width=True, height=height)
+    except Exception as e:
+        st.warning(f"Interactive table failed: {e}. Showing static table instead.")
+        st.table(safe_df.head(50))
 
 # ---------------- Data fetchers (cached) ----------------
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -1266,6 +1319,7 @@ def fetch_trial_details_with_vaccines(nct_id: str):
         eligibility = _extract_eligibility(data)
         collaborators = _extract_collaborators(data)
         results_summary = _extract_results_summary(data)
+        pubmed_articles = _fetch_pubmed_articles_for_trial(nct_id, data)
 
         return {
             "NCT ID": nct_id,
@@ -1282,7 +1336,8 @@ def fetch_trial_details_with_vaccines(nct_id: str):
             "Design": design_details,
             "Eligibility": eligibility,
             "Collaborators": collaborators,
-            "Results": results_summary
+            "Results": results_summary,
+            "PubMed_Articles": pubmed_articles
         }
     except requests.RequestException:
         return None
@@ -1542,6 +1597,13 @@ with tab1:
 
                 if details.get("Results"):
                     st.success("✅ Results data available for this study")
+
+                if details.get("PubMed_Articles"):
+                    with st.expander(f"📚 PubMed Articles ({len(details['PubMed_Articles'])})"):
+                        for pm in details["PubMed_Articles"]:
+                            authors = ", ".join(pm["authors"]) + (" et al." if len(pm["authors"]) == 3 else "")
+                            st.markdown(f"**[{pm['title']}](https://pubmed.ncbi.nlm.nih.gov/{pm['pmid']})**")
+                            st.caption(f"{pm['source']} | {pm['pubdate']} | {authors}")
 
                 if st.button("🧠 Summarize This Study", key=f"summarize_detail_{selected_id}"):
                     with st.spinner("Creating AI summary..."):
@@ -1860,6 +1922,13 @@ with tab2:
                 if details_v.get("Results"):
                     st.success("✅ Results data available for this study")
 
+                if details_v.get("PubMed_Articles"):
+                    with st.expander(f"📚 PubMed Articles ({len(details_v['PubMed_Articles'])})"):
+                        for pm in details_v["PubMed_Articles"]:
+                            authors = ", ".join(pm["authors"]) + (" et al." if len(pm["authors"]) == 3 else "")
+                            st.markdown(f"**[{pm['title']}](https://pubmed.ncbi.nlm.nih.gov/{pm['pmid']})**")
+                            st.caption(f"{pm['source']} | {pm['pubdate']} | {authors}")
+
                 if st.button("🧠 Summarize This Study", key=f"summarize_vaccine_detail_{selected_vaccine_id}"):
                     with st.spinner("Creating AI trial brief..."):
                         trial_summary_v, detail_err_v = _summarize_single_trial(selected_vaccine_id, details_v)
@@ -1983,6 +2052,13 @@ with tab2:
                         if o["Description"]:
                             st.caption(o["Description"])
 
+                if details_c.get("PubMed_Articles"):
+                    with st.expander(f"📚 PubMed Articles ({len(details_c['PubMed_Articles'])})"):
+                        for pm in details_c["PubMed_Articles"]:
+                            authors = ", ".join(pm["authors"]) + (" et al." if len(pm["authors"]) == 3 else "")
+                            st.markdown(f"**[{pm['title']}](https://pubmed.ncbi.nlm.nih.gov/{pm['pmid']})**")
+                            st.caption(f"{pm['source']} | {pm['pubdate']} | {authors}")
+
                 if st.button("🧠 Summarize This Study", key=f"summarize_comp_detail_{selected_comp_id}"):
                     with st.spinner("Creating AI trial brief..."):
                         trial_summary_c, detail_err_c = _summarize_single_trial(selected_comp_id, details_c)
@@ -1995,58 +2071,7 @@ with tab2:
 if not st.session_state.get("vaccine_trials") and not st.session_state.get("competitor_trials"):
     st.info("👆 Enter a vaccine product name and click Search Vaccine & Competitors to begin.")
 
-# ---------------- Roadmap / Guidance ----------------
-with st.expander("🔭 Platform Roadmap: RAG-Enhanced Intelligence Pipeline", expanded=False):
-    st.markdown("""
-    ### Phase 1: Enhanced Data Collection (Weeks 1-2)
-    - **Extended API Integration:** Expand ClinicalTrials.gov API usage with field-specific queries for enrollment trends, outcome metrics, and sponsor analytics
-    - **Regulatory Data Sources:** Integrate FDA Drug Approvals Database, EMA European Public Assessment Reports (EPAR), and WHO Prequalification data
-    - **Company Intelligence:** Scrape authorized company investor relations pages, press releases, and pipeline updates
-    - **Scheduled Refresh Jobs:** Implement automated daily/weekly data sync per indication with change detection
-    
-    ### Phase 2: Document Processing Pipeline (Weeks 3-4)
-    - **Web Crawling Infrastructure:** Build respectful crawler (Requests + BeautifulSoup) with robots.txt compliance for FDA, EMA, company sites
-    - **Document Parsing:** 
-      - PDF extraction: PyPDF2 + pdfplumber for structured data, unstructured.io for complex layouts
-      - HTML normalization: trafilatura for clean text extraction
-      - Clinical study reports: specialized parsers for CSR tables and figures
-    - **Content Chunking:** Intelligent text splitting (sentence-aware, ~500 tokens) preserving context and metadata
-    
-    ### Phase 3: Vector Store & Embeddings (Weeks 5-6)
-    - **Embedding Strategy:** 
-      - Primary: OpenAI `text-embedding-3-small` or `text-embedding-ada-002` for semantic search
-      - Alternative: HuggingFace `all-MiniLM-L6-v2` for cost-effective local embeddings
-    - **FAISS Index Architecture:**
-      - Hierarchical indices: per-vaccine, per-disease, per-sponsor taxonomies
-      - Metadata filtering: phase, status, date ranges, geographic regions
-      - Incremental updates: append-only index with periodic re-indexing
-    - **Storage:** Persistent FAISS indices + metadata SQLite/PostgreSQL for hybrid search
-    
-    ### Phase 4: Retrieval-Augmented Generation (Weeks 7-8)
-    - **Query Understanding:** LLM-powered query expansion and intent classification (vaccine comparison, regulatory timeline, competitive analysis)
-    - **Retrieval Pipeline:**
-      - Semantic search: top-k relevant chunks (k=10-20) with similarity threshold
-      - Re-ranking: cross-encoder model for precision
-      - Context assembly: smart chunk ordering and deduplication
-    - **RAG Summarization:** 
-      - Context-aware prompts with retrieved evidence citations
-      - Multi-document synthesis across trials, regulatory filings, and company reports
-      - Fact-checking layer: verify claims against source documents
-    
-    ### Phase 5: Advanced Analytics & Intelligence (Weeks 9-10)
-    - **Competitive Intelligence Dashboard:** 
-      - Real-time pipeline tracking with phase progression alerts
-      - Sponsor portfolio analysis and market share calculations
-      - Timeline predictions using historical approval patterns
-    - **Regulatory Risk Scoring:** ML model for FDA/EMA approval probability based on trial design, endpoints, and historical precedents
-    - **Executive AI Assistant:** Conversational interface for natural language queries ("What's the competitive landscape for RSV vaccines?")
-    
-    ### Phase 6: Production Deployment & Scaling (Ongoing)
-    - **Infrastructure:** Containerized deployment (Docker) with horizontal scaling
-    - **Caching Strategy:** Redis for API responses, vector search results, and summary generation
-    - **Monitoring:** Logging, error tracking, and performance metrics
-    - **Security:** API key management, rate limiting, and audit trails
-    """)
+
 
 # ---------------- Footer ----------------
 st.markdown("---")
