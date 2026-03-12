@@ -114,6 +114,14 @@ def _extract_results_summary(study):
         "adverse_events": adverse.get("events", [])
     }
 
+def _check_for_publications(study) -> str:
+    """Quickly check if the trial data contains any linked PubMed IDs."""
+    proto = (study or {}).get("protocolSection", {}) or {}
+    refs_mod = proto.get("referencesModule", {}) or {}
+    # Check if any reference has a 'pmid' key attached
+    has_pmid = any(ref.get("pmid") for ref in refs_mod.get("references", []))
+    return "📄 Yes" if has_pmid else "➖ No"
+
 def _fetch_pubmed_articles_for_trial(nct_id: str, trial_data: dict) -> list:
     """Fetch PubMed publications using explicit PMIDs from the trial record, with fallback to search."""
     try:
@@ -954,6 +962,8 @@ _VACCINE_MANUFACTURER_DATA = {
     ],
     "GSK": [
         "Arexvy",
+        "Bexsero",
+        "Menveo",
         "respiratory syncytial virus vaccine recombinant adjuvanted",
         "GSK RSV vaccine",
     ],
@@ -1053,29 +1063,44 @@ def _infer_manufacturer_llm(vaccine_name: str) -> str:
     return None
 
 def _get_vaccine_manufacturer(raw_name: str, use_llm_fallback: bool = True):
-    """Return a single primary manufacturer name for a vaccine, falling back to LLM inference if unknown."""
+    """Return a single primary manufacturer name, using a local file cache before hitting the LLM."""
     if not raw_name:
         return None
-    # Try direct norm lookup
+        
     norm = _norm_txt(raw_name)
+    
+    # 1. Check hardcoded index
     if norm in _VACCINE_MANUFACTURER_INDEX:
         return _VACCINE_MANUFACTURER_INDEX[norm]
-    # Try through synonyms
+        
+    # 2. Check synonyms
     syns = _VACCINE_SYNONYM_INDEX.get(norm, [])
     for s in syns:
         s_norm = _norm_txt(s)
-        mfr = _VACCINE_MANUFACTURER_INDEX.get(s_norm)
-        if mfr:
-            return mfr
+        if s_norm in _VACCINE_MANUFACTURER_INDEX:
+            return _VACCINE_MANUFACTURER_INDEX[s_norm]
             
-    # LLM Dynamic Fallback
-    if use_llm_fallback:
-        inferred = _infer_manufacturer_llm(raw_name)
-        if inferred:
-            _save_learned_manufacturer(raw_name, inferred)
-            _VACCINE_MANUFACTURER_INDEX[_norm_txt(raw_name)] = inferred
-            return inferred
+    # 3. Check the local JSON cache directly
+    learned = _load_learned_manufacturers()
+    if norm in learned:
+        _VACCINE_MANUFACTURER_INDEX[norm] = learned[norm] # Sync to memory
+        return learned[norm]
         
+    # 4. LLM Dynamic Fallback
+    if use_llm_fallback:
+        # VISUAL INDICATOR: Let the user know the AI is researching
+        st.toast(f"🤖 AI is researching originator for '{raw_name}'...", icon="🔍")
+        
+        inferred = _infer_manufacturer_llm(raw_name)
+        
+        if inferred and inferred.strip().lower() != "unknown":
+            st.toast(f"✅ AI found originator: {inferred}", icon="🧠")
+            _save_learned_manufacturer(raw_name, inferred)
+            _VACCINE_MANUFACTURER_INDEX[norm] = inferred
+            return inferred
+        else:
+            st.toast(f"⚠️ AI could not determine the originator.", icon="🤷")
+            
     return None
 
 def _mesh_terms_intervention(study) -> list:
@@ -1223,7 +1248,8 @@ def fetch_all_vaccine_trials(disease: str, max_pages: int = 10):
                     "Phase": ", ".join(phases),
                     "Status": str(overall_status),
                     "Sponsor": str(sponsor_name),
-                    "Vaccines": ", ".join(vaccines) if vaccines else "Not reported"
+                    "Vaccines": ", ".join(vaccines) if vaccines else "Not reported",
+                    "Publications": _check_for_publications(s)
                 })
 
             page_token = data.get("nextPageToken")
@@ -1411,6 +1437,19 @@ model_label = st.sidebar.selectbox(
 )
 st.session_state["gemini_model"] = GEMINI_MODEL_OPTIONS.get(model_label, DEFAULT_LLM_MODEL)
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⚙️ Admin Tools")
+if st.sidebar.button("🗑️ Clear AI Manufacturer Cache"):
+    # 1. Clear the Streamlit memory cache for the LLM function
+    _infer_manufacturer_llm.clear() 
+    
+    # 2. Empty out the JSON file
+    try:
+        with open(LEARNED_MFR_FILE, 'w') as f:
+            json.dump({}, f)
+        st.sidebar.success("Cache cleared!")
+    except Exception as e:
+        st.sidebar.error(f"Error: {e}")
 # Ensure state keys exist
 for k in ["studies", "vaccine_trials", "competitor_trials", "target_vaccine", "target_diseases"]:
     st.session_state.setdefault(k, [] if "trials" in k or "studies" in k or "diseases" in k else "")
@@ -1678,7 +1717,8 @@ with tab2:
                                 "Phase": ", ".join(design.get("phases") or ["Not reported"]),
                                 "Status": str(status.get("overallStatus") or "Unknown"),
                                 "Sponsor": str(sponsor.get("leadSponsor", {}).get("name", "Unknown")),
-                                "Vaccines": ", ".join(names) if names else "Not reported"
+                                "Vaccines": ", ".join(names) if names else "Not reported",
+                                "Publications": _check_for_publications(s)
                             })
                             ds = []
                             ds.extend(proto.get("conditionsModule", {}).get("conditions", []) or [])
@@ -1740,12 +1780,39 @@ with tab2:
         df_vaccine = pd.DataFrame(vaccine_trials)
 
         # Classify sponsor type relative to originator (if known)
-        mfr_norm = _norm_txt(mfr) if (isinstance(mfr, str) and mfr) else None
-        if mfr_norm:
-            def _sponsor_type(name: str) -> str:
-                n = _norm_txt(name or "")
-                return "Originator / Manufacturer" if mfr_norm and mfr_norm in n else "External / Other"
-            df_vaccine["Sponsor Type"] = df_vaccine["Sponsor"].apply(_sponsor_type)
+        mfr = _get_vaccine_manufacturer(target_vaccine)
+        mfr_norm = _norm_txt(mfr) if mfr else None
+
+        def _sponsor_type(name: str) -> str:
+            if not mfr_norm:
+                return "Unknown Originator"
+                
+            sponsor_name_norm = _norm_txt(name or "")
+            
+            # Substring match in BOTH directions
+            if mfr_norm in sponsor_name_norm or sponsor_name_norm in mfr_norm:
+                return "Originator / Manufacturer"
+                
+            # Bulletproof Grouping Logic
+            aliases_groups = [
+                ["pfizer", "biontech", "wyeth", "hospira"],
+                ["gsk", "glaxosmithkline"],
+                ["astrazeneca", "medimmune"],
+                ["sanofi", "pasteur", "aventis"],
+                ["merck", "msd"],
+                ["jnj", "johnson", "janssen"]
+            ]
+            
+            for group in aliases_groups:
+                # If the AI identified ANY of these as the originator...
+                if any(alias in mfr_norm for alias in group):
+                    # AND the trial sponsor contains ANY of these...
+                    if any(alias in sponsor_name_norm for alias in group):
+                        return "Originator / Manufacturer"
+                        
+            return "External / Other"
+
+        df_vaccine["Sponsor Type"] = df_vaccine["Sponsor"].apply(_sponsor_type)
 
         # Sidebar filters for YOUR vaccine trials (Tab 2)
         st.sidebar.header("🎛️ Vaccine Filters")
