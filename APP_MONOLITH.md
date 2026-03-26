@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import streamlit as st
 import requests
@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 load_dotenv() 
 
 # ---------------- App config + options ----------------
-st.set_page_config(page_title="Vaccine Pipeline Platform", page_icon="💉", layout="wide")
+st.set_page_config(page_title="Vaccine Pipeline Platform", page_icon="ðŸ’‰", layout="wide")
 
 DEFAULT_LLM_MODEL = "models/gemini-robotics-er-1.5-preview"  # or use your robotics model
 MAX_TRIALS_FOR_SUMMARY = 10  # how many trials to summarize per call (keep moderate for latency)
@@ -123,7 +123,7 @@ def _check_for_publications(study) -> str:
     refs_mod = proto.get("referencesModule", {}) or {}
     # Check if any reference has a 'pmid' key attached
     has_pmid = any(ref.get("pmid") for ref in refs_mod.get("references", []))
-    return "📄 Yes" if has_pmid else "➖ No"
+    return "ðŸ“„ Yes" if has_pmid else "âž– No"
 
 def _fetch_pubmed_articles_for_trial(nct_id: str, trial_data: dict) -> list:
     """Fetch PubMed publications using explicit PMIDs from the trial record, with fallback to search."""
@@ -311,8 +311,8 @@ def generate_pdf_summary(summary_text: str, title: str = "Vaccine Pipeline Summa
                 i += 1
             
             # Bullet points
-            elif line.startswith('-') or line.startswith('•') or line.startswith('*'):
-                bullet_text = line.lstrip('-•*').strip()
+            elif line.startswith('-') or line.startswith('â€¢') or line.startswith('*'):
+                bullet_text = line.lstrip('-â€¢*').strip()
                 # Convert markdown bold to HTML bold with proper regex
                 import re
                 # Handle **bold** (non-greedy, multiple occurrences)
@@ -325,7 +325,7 @@ def generate_pdf_summary(summary_text: str, title: str = "Vaccine Pipeline Summa
                 bullet_text = bullet_text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                 # Re-apply bold tags (now safe)
                 bullet_text = re.sub(r'&lt;b&gt;([^&]+?)&lt;/b&gt;', r'<b>\1</b>', bullet_text)
-                story.append(Paragraph(f"• {bullet_text}", bullet_style))
+                story.append(Paragraph(f"â€¢ {bullet_text}", bullet_style))
                 i += 1
             
             # Regular text
@@ -634,7 +634,7 @@ Your summaries must be:
 - Concise but comprehensive (executive-level detail without overwhelming)
 
 When you make a concrete statement (e.g., 'most RSV trials are Phase 3' or 'enrollment is slowing'),
-back it up by citing 1–3 example NCT IDs in parentheses, like (e.g., NCT01234567, NCT08976543).
+back it up by citing 1â€“3 example NCT IDs in parentheses, like (e.g., NCT01234567, NCT08976543).
 
 Focus on: phase progression signals, enrollment trends, sponsor competitive landscape, regulatory timeline implications, 
 and strategic opportunities or threats."""
@@ -831,17 +831,17 @@ def _vaccine_intel_summary(
     system_prompt = """
 You are a senior vaccine market and clinical development intelligence analyst.
 Your audience is vaccine strategy, BD, and medical affairs leaders.
-You combine structured clinical trial data (including NCT IDs) with high‑level background context
-to produce actionable, up‑to‑date insights about a specific vaccine product
+You combine structured clinical trial data (including NCT IDs) with highâ€‘level background context
+to produce actionable, upâ€‘toâ€‘date insights about a specific vaccine product
 and its competitive landscape.
 
 Your responses must be:
-- Fact‑focused and analytical (no hype)
+- Factâ€‘focused and analytical (no hype)
 - Clear about what comes from clinicaltrials.gov data vs general background
 - Explicit about uncertainties or missing data
 
 When you assert a directional or quantitative insight (e.g., "GSK appears as a top sponsor
-for Abrysvo despite Pfizer being the originator"), explicitly reference 1–3 supporting
+for Abrysvo despite Pfizer being the originator"), explicitly reference 1â€“3 supporting
 NCT IDs in parentheses taken from the provided trial lists.
 """
 
@@ -860,7 +860,7 @@ Please structure your answer as:
 - Summarize the current trial footprint for this product (phases, status mix, geographies if visible).
 - Highlight key sponsors running trials (note: sponsors may differ from manufacturer).
 - Explicitly discuss any divergence between originator/manufacturer and top sponsors, and explain scenarios
-  like head‑to‑head or real‑world studies where competitors (e.g., GSK) or academic centers run trials that
+  like headâ€‘toâ€‘head or realâ€‘world studies where competitors (e.g., GSK) or academic centers run trials that
   still use this product.
 - In this section, whenever you describe a pattern (e.g., "most trials are Phase 3 and completed"), cite
   example NCT IDs in parentheses, such as (e.g., NCT01234567, NCT08976543).
@@ -870,16 +870,16 @@ Please structure your answer as:
 - Compare approximate development stage (phases and status) of this product vs key competitors.
 
 ## 4. MARKET / REGULATORY CONTEXT (HIGH-LEVEL)
-- Using external_context only as high‑level background, describe approval or launch status
+- Using external_context only as highâ€‘level background, describe approval or launch status
   (e.g., approved, under review, still developmental) if that is clearly indicated.
 - If information is ambiguous or missing, say so instead of guessing.
 
 ## 5. STRATEGIC TAKEAWAYS
-- 3–5 concise bullets for how a user of a vaccine intelligence platform could use this information
+- 3â€“5 concise bullets for how a user of a vaccine intelligence platform could use this information
   (e.g., prioritizing indications, watching certain competitors, data gaps to track).
 
 ## 6. KEY TRIAL ANNEX (NCT IDs)
-- Provide a bullet list of 8–15 of the most informative trials (mix of this product and key competitors).
+- Provide a bullet list of 8â€“15 of the most informative trials (mix of this product and key competitors).
 - For each trial, include at least: NCT ID, main vaccine(s), phase, status, and lead sponsor.
 
 Be explicit about what is inferred primarily from clinicaltrials.gov trial metadata vs general background.
@@ -940,7 +940,7 @@ def _matches_vaccine_name(names, target_norms) -> bool:
 
 # Minimal curated synonym + manufacturer sets for major vaccines.
 _VACCINE_SYNONYM_GROUPS = [
-    # Pfizer / BioNTech – COVID-19
+    # Pfizer / BioNTech â€“ COVID-19
     [
         "Comirnaty",
         "BNT162b2",
@@ -948,7 +948,7 @@ _VACCINE_SYNONYM_GROUPS = [
         "Pfizer-BioNTech COVID-19 vaccine",
         "Pfizer-BioNTech mRNA COVID-19 vaccine",
     ],
-    # Moderna – COVID-19
+    # Moderna â€“ COVID-19
     [
         "Spikevax",
         "mRNA-1273",
@@ -956,7 +956,7 @@ _VACCINE_SYNONYM_GROUPS = [
         "Elasomeran",
         "Moderna COVID-19 vaccine",
     ],
-    # Pfizer – RSV
+    # Pfizer â€“ RSV
     [
         "Abrysvo",
         "RSVpreF",
@@ -964,13 +964,13 @@ _VACCINE_SYNONYM_GROUPS = [
         "bivalent RSVpreF3",
         "Pfizer RSVpreF vaccine",
     ],
-    # GSK – RSV
+    # GSK â€“ RSV
     [
         "Arexvy",
         "respiratory syncytial virus vaccine recombinant adjuvanted",
         "GSK RSV vaccine",
     ],
-    # Pfizer – pneumococcal
+    # Pfizer â€“ pneumococcal
     [
         "Prevnar 13",
         "Prevenar 13",
@@ -1141,17 +1141,17 @@ def _get_vaccine_manufacturer(raw_name: str, use_llm_fallback: bool = True):
     # 4. LLM Dynamic Fallback
     if use_llm_fallback:
         # VISUAL INDICATOR: Let the user know the AI is researching
-        st.toast(f"🤖 AI is researching originator for '{raw_name}'...", icon="🔍")
+        st.toast(f"ðŸ¤– AI is researching originator for '{raw_name}'...", icon="ðŸ”")
         
         inferred = _infer_manufacturer_llm(raw_name)
         
         if inferred and inferred.strip().lower() != "unknown":
-            st.toast(f"✅ AI found originator: {inferred}", icon="🧠")
+            st.toast(f"âœ… AI found originator: {inferred}", icon="ðŸ§ ")
             _save_learned_manufacturer(raw_name, inferred)
             _VACCINE_MANUFACTURER_INDEX[norm] = inferred
             return inferred
         else:
-            st.toast(f"⚠️ AI could not determine the originator.", icon="🤷")
+            st.toast(f"âš ï¸ AI could not determine the originator.", icon="ðŸ¤·")
             
     return None
 
@@ -1505,7 +1505,7 @@ def fetch_pipeline_publications(query: str, max_items: int = 5):
                         "title": title,
                         "link": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
                         "pubdate": pubdate,
-                        "source": f"📄 {source}",
+                        "source": f"ðŸ“„ {source}",
                         "authors": author_str,
                         "type": "pubmed"
                     })
@@ -1556,7 +1556,7 @@ def fetch_pipeline_publications(query: str, max_items: int = 5):
                         "title": title_text,
                         "link": href,
                         "pubdate": pub_text,
-                        "source": "🏛️ FDA Press Release",
+                        "source": "ðŸ›ï¸ FDA Press Release",
                         "authors": "",
                         "type": "fda"
                     })
@@ -1760,11 +1760,11 @@ def create_country_heatmap(df: pd.DataFrame):
         return None
 
 # ---------------- Main UI ----------------
-st.title("💉 Vaccine Pipeline Platform")
+st.title("ðŸ’‰ Vaccine Pipeline Platform")
 st.markdown("Explore complete vaccine trial data from ClinicalTrials.gov and connecting trials to pubmed articles. Search by disease condition or vaccine product name with competitor analysis.")
 
 # Sidebar: Gemini model selection (single control for all intelligence features)
-st.sidebar.markdown("### 🧠 Gemini model")
+st.sidebar.markdown("### ðŸ§  Gemini model")
 model_label = st.sidebar.selectbox(
     "Model for all AI summaries",
     options=list(GEMINI_MODEL_OPTIONS.keys()),
@@ -1774,8 +1774,8 @@ model_label = st.sidebar.selectbox(
 st.session_state["gemini_model"] = GEMINI_MODEL_OPTIONS.get(model_label, DEFAULT_LLM_MODEL)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### ⚙️ Admin Tools")
-if st.sidebar.button("🗑️ Clear AI Manufacturer Cache"):
+st.sidebar.markdown("### âš™ï¸ Admin Tools")
+if st.sidebar.button("ðŸ—‘ï¸ Clear AI Manufacturer Cache"):
     # 1. Clear the Streamlit memory cache for the LLM function
     _infer_manufacturer_llm.clear() 
     
@@ -1790,7 +1790,7 @@ if st.sidebar.button("🗑️ Clear AI Manufacturer Cache"):
 for k in ["studies", "vaccine_trials", "competitor_trials", "target_vaccine", "target_diseases"]:
     st.session_state.setdefault(k, [] if "trials" in k or "studies" in k or "diseases" in k else "")
 
-tab1, tab2 = st.tabs(["🔍 Search by Disease", "💊 Search by Vaccine Product"])
+tab1, tab2 = st.tabs(["ðŸ” Search by Disease", "ðŸ’Š Search by Vaccine Product"])
 
 # ---------------- TAB 1: Search by Disease ----------------
 with tab1:
@@ -1799,7 +1799,7 @@ with tab1:
 
     disease = st.text_input("Enter Disease Name", value="RSV", key="disease_input")
 
-    if st.button("🔍 Fetch All Trials", key="fetch_disease"):
+    if st.button("ðŸ” Fetch All Trials", key="fetch_disease"):
         with st.spinner("Fetching all vaccine trials (this may take a moment)..."):
             studies = fetch_all_vaccine_trials(disease, max_pages=10)
             if not studies:
@@ -1807,7 +1807,7 @@ with tab1:
                 st.session_state["studies"] = []
             else:
                 st.session_state["studies"] = studies
-                st.success(f"✅ Found {len(studies)} vaccine trials for {disease}.")
+                st.success(f"âœ… Found {len(studies)} vaccine trials for {disease}.")
 
     studies = st.session_state.get("studies", [])
 
@@ -1815,7 +1815,7 @@ with tab1:
         df = pd.DataFrame(studies)
 
         # Sidebar filters (Disease Search) - single filter set here
-        st.sidebar.header("🎛️ Filters (Disease Search)")
+        st.sidebar.header("ðŸŽ›ï¸ Filters (Disease Search)")
         phase_options = sorted({p.strip() for val in df["Phase"].dropna() for p in str(val).split(",")})
         status_options = sorted([s for s in df["Status"].dropna().unique()])
 
@@ -1830,7 +1830,7 @@ with tab1:
         if selected_status:
             df_filtered = df_filtered[df_filtered["Status"].isin(selected_status)]
 
-        st.info(f"📊 Showing {len(df_filtered)} of {len(studies)} trials")
+        st.info(f"ðŸ“Š Showing {len(df_filtered)} of {len(studies)} trials")
         
         # Visualizations
         col1, col2, col3 = st.columns(3)
@@ -1848,7 +1848,7 @@ with tab1:
                 st.plotly_chart(heatmap, use_container_width=True)
                 
         # --- PUBLICATIONS & FDA NEWS ---
-        with st.expander(f"📰 Recent Publications & Regulatory News for '{disease}'", icon="📡"):
+        with st.expander(f"ðŸ“° Recent Publications & Regulatory News for '{disease}'", icon="ðŸ“¡"):
             news_items = fetch_pipeline_publications(disease, max_items=5)
             if news_items:
                 for item in news_items:
@@ -1859,27 +1859,27 @@ with tab1:
                     if item.get('pubdate'):
                         caption_parts.append(item['pubdate'])
                     if caption_parts:
-                        st.caption(" · ".join(caption_parts))
+                        st.caption(" Â· ".join(caption_parts))
             else:
                 st.info("No recent publications found.")
         
         show_interactive_df(df_filtered, key="disease_tab", height=420)
 
-        if st.button("🧠 Summarize Displayed Trials", key="summarize_disease_trials"):
+        if st.button("ðŸ§  Summarize Displayed Trials", key="summarize_disease_trials"):
             with st.spinner("Generating AI executive summary..."):
                 summary_txt, summary_err = _summarize_trials_with_llm(
                     df_filtered.to_dict("records"),
                     context_instructions=f"Disease search term: {disease}. Showing {len(df_filtered)} of {len(df)} vaccine trials."
                 )
             if summary_txt:
-                st.markdown("#### 🤖 AI Executive Summary")
+                st.markdown("#### ðŸ¤– AI Executive Summary")
                 st.write(summary_txt)
                 
                 # Export button
                 pdf_buffer = generate_pdf_summary(summary_txt, f"Vaccine Pipeline Summary - {disease}")
                 if pdf_buffer:
                     st.download_button(
-                        label="📄 Download PDF Report",
+                        label="ðŸ“„ Download PDF Report",
                         data=pdf_buffer,
                         file_name=f"vaccine_summary_{disease}_{datetime.now().strftime('%Y%m%d')}.pdf",
                         mime="application/pdf",
@@ -1890,7 +1890,7 @@ with tab1:
                 st.warning(summary_err)
 
         selected_id = st.selectbox(
-            "🔬 View Detailed Info",
+            "ðŸ”¬ View Detailed Info",
             options=["Select a study..."] + [str(x) for x in df_filtered["NCT ID"].tolist()],
             key="select_disease_detail"
         )
@@ -1901,7 +1901,7 @@ with tab1:
 
             if details:
                 st.markdown("---")
-                st.subheader(f"📋 Study Details: {selected_id}")
+                st.subheader(f"ðŸ“‹ Study Details: {selected_id}")
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1926,7 +1926,7 @@ with tab1:
                 # Enhanced details
                 if details.get("Design"):
                     design = details["Design"]
-                    with st.expander("📐 Study Design Details"):
+                    with st.expander("ðŸ“ Study Design Details"):
                         col_d1, col_d2 = st.columns(2)
                         with col_d1:
                             if design.get("study_type"):
@@ -1944,15 +1944,15 @@ with tab1:
                                 st.markdown(f"**Number of Arms:** {design.get('number_of_arms')}")
 
                 if details.get("Diseases"):
-                    st.markdown("**🦠 Diseases/Conditions:**")
+                    st.markdown("**ðŸ¦  Diseases/Conditions:**")
                     st.write(", ".join(details["Diseases"]))
 
-                st.markdown("**💉 Vaccine Products:**")
+                st.markdown("**ðŸ’‰ Vaccine Products:**")
                 for v in details["Vaccines"]:
                     st.markdown(f"- {v}")
 
                 if details.get("Locations"):
-                    with st.expander("🌍 Study Locations"):
+                    with st.expander("ðŸŒ Study Locations"):
                         for loc in details["Locations"][:10]:  # Show first 10
                             loc_str = f"{loc.get('name', '')}"
                             if loc.get("city"):
@@ -1961,10 +1961,10 @@ with tab1:
                                 loc_str += f", {loc.get('state')}"
                             if loc.get("country"):
                                 loc_str += f", {loc.get('country')}"
-                            st.write(f"• {loc_str}")
+                            st.write(f"â€¢ {loc_str}")
 
                 if details.get("Eligibility"):
-                    with st.expander("👥 Eligibility Criteria"):
+                    with st.expander("ðŸ‘¥ Eligibility Criteria"):
                         elig = details["Eligibility"]
                         if elig.get("gender"):
                             st.markdown(f"**Gender:** {elig.get('gender')}")
@@ -1978,40 +1978,40 @@ with tab1:
                             st.text(elig.get("criteria")[:500] + "..." if len(elig.get("criteria", "")) > 500 else elig.get("criteria"))
 
                 if details.get("Collaborators"):
-                    st.markdown("**🤝 Collaborators:**")
+                    st.markdown("**ðŸ¤ Collaborators:**")
                     st.write(", ".join(details["Collaborators"]))
 
                 if details["Outcomes"]:
-                    st.markdown("**📊 Primary Outcome Measures:**")
+                    st.markdown("**ðŸ“Š Primary Outcome Measures:**")
                     for o in details["Outcomes"]:
-                        st.write(f"• {o['Title']}")
+                        st.write(f"â€¢ {o['Title']}")
                         if o["Description"]:
                             st.caption(o["Description"])
                 else:
                     st.info("No outcomes reported yet.")
 
                 if details.get("Results"):
-                    st.success("✅ Results data available for this study")
+                    st.success("âœ… Results data available for this study")
 
                 if details.get("PubMed_Articles"):
-                    with st.expander(f"📚 PubMed Articles ({len(details['PubMed_Articles'])})"):
+                    with st.expander(f"ðŸ“š PubMed Articles ({len(details['PubMed_Articles'])})"):
                         for pm in details["PubMed_Articles"]:
                             authors = ", ".join(pm["authors"]) + (" et al." if len(pm["authors"]) == 3 else "")
                             st.markdown(f"**[{pm['title']}](https://pubmed.ncbi.nlm.nih.gov/{pm['pmid']})**")
                             st.caption(f"{pm['source']} | {pm['pubdate']} | {authors}")
 
-                if st.button("🧠 Summarize This Study", key=f"summarize_detail_{selected_id}"):
+                if st.button("ðŸ§  Summarize This Study", key=f"summarize_detail_{selected_id}"):
                     with st.spinner("Creating AI summary..."):
                         trial_summary, detail_err = _summarize_single_trial(selected_id, details)
                     if trial_summary:
-                        st.markdown("#### 🤖 AI Trial Brief")
+                        st.markdown("#### ðŸ¤– AI Trial Brief")
                         st.write(trial_summary)
                         
                         # Export button for single trial
                         pdf_buffer = generate_pdf_summary(trial_summary, f"Trial Brief - {selected_id}")
                         if pdf_buffer:
                             st.download_button(
-                                label="📄 Download PDF Report",
+                                label="ðŸ“„ Download PDF Report",
                                 data=pdf_buffer,
                                 file_name=f"trial_brief_{selected_id}_{datetime.now().strftime('%Y%m%d')}.pdf",
                                 mime="application/pdf",
@@ -2021,16 +2021,16 @@ with tab1:
                     elif detail_err:
                         st.warning(detail_err)
     else:
-        st.info("👆 Enter a disease name and click Fetch All Trials to begin.")
+        st.info("ðŸ‘† Enter a disease name and click Fetch All Trials to begin.")
 
 # ---------------- TAB 2: Search by Vaccine Product + Competitors ----------------
 with tab2:
     st.subheader("Search Trials by Vaccine Product")
-    st.caption("Find your vaccine’s trials + competitor vaccines targeting the same disease(s).")
+    st.caption("Find your vaccineâ€™s trials + competitor vaccines targeting the same disease(s).")
 
     vaccine_name = st.text_input("Enter Vaccine Product Name", value="", key="vaccine_input")
 
-    if st.button("💊 Search Vaccine & Competitors", key="fetch_vaccine"):
+    if st.button("ðŸ’Š Search Vaccine & Competitors", key="fetch_vaccine"):
         if not vaccine_name.strip():
             st.warning("Please enter a vaccine name.")
         else:
@@ -2110,10 +2110,10 @@ with tab2:
                                     competitor_trials.append(t)
 
                     st.session_state["competitor_trials"] = competitor_trials
-                    st.success(f"✅ Found {len(vaccine_results)} trials for '{vaccine_name}' and {len(competitor_trials)} competitor trials!")
+                    st.success(f"âœ… Found {len(vaccine_results)} trials for '{vaccine_name}' and {len(competitor_trials)} competitor trials!")
                 else:
                     st.session_state["competitor_trials"] = []
-                    st.success(f"✅ Found {len(st.session_state['vaccine_trials'])} trials for '{vaccine_name}' (no clear disease context detected)")
+                    st.success(f"âœ… Found {len(st.session_state['vaccine_trials'])} trials for '{vaccine_name}' (no clear disease context detected)")
             except requests.RequestException as e:
                 st.error(f"Search failed: {e}")
                 st.session_state["vaccine_trials"] = []
@@ -2127,7 +2127,7 @@ with tab2:
 
     if vaccine_trials:
         st.markdown("---")
-        st.subheader(f"🎯 Your Vaccine: {target_vaccine}")
+        st.subheader(f"ðŸŽ¯ Your Vaccine: {target_vaccine}")
         meta_bits = []
         if target_diseases:
             meta_bits.append(f"Primary Disease(s): {', '.join(target_diseases)}")
@@ -2175,7 +2175,7 @@ with tab2:
         df_vaccine["Sponsor Type"] = df_vaccine["Sponsor"].apply(_sponsor_type)
 
         # Sidebar filters for YOUR vaccine trials (Tab 2)
-        st.sidebar.header("🎛️ Vaccine Filters")
+        st.sidebar.header("ðŸŽ›ï¸ Vaccine Filters")
         phase_options_v = sorted({p.strip() for val in df_vaccine["Phase"].dropna() for p in str(val).split(",")})
         status_options_v = sorted([s for s in df_vaccine["Status"].dropna().unique()])
         sponsor_scope_options = ["All sponsors"]
@@ -2205,7 +2205,7 @@ with tab2:
         if sponsor_scope == "Originator-sponsored only" and "Sponsor Type" in df_vaccine_filtered.columns:
             df_vaccine_filtered = df_vaccine_filtered[df_vaccine_filtered["Sponsor Type"] == "Originator / Manufacturer"]
 
-        st.info(f"📊 Showing {len(df_vaccine_filtered)} of {len(df_vaccine)} trials")
+        st.info(f"ðŸ“Š Showing {len(df_vaccine_filtered)} of {len(df_vaccine)} trials")
         
         # Visualizations
         v_col1, v_col2 = st.columns(2)
@@ -2221,7 +2221,7 @@ with tab2:
         # --- REGULATORY & NEWS ---
         col_reg, col_news = st.columns(2)
         with col_reg:
-            with st.expander("🏛️ openFDA Regulatory Intel", icon="🇺🇸"):
+            with st.expander("ðŸ›ï¸ openFDA Regulatory Intel", icon="ðŸ‡ºðŸ‡¸"):
                 fda_data = fetch_openfda_data(target_vaccine)
                 if isinstance(fda_data, dict) and "error" in fda_data:
                     st.error(fda_data["error"])
@@ -2256,23 +2256,23 @@ with tab2:
                     # FAERS Safety Signal
                     faers = fda_data.get('faers_total', 0)
                     if faers > 0:
-                        st.markdown(f"⚠️ **FAERS Adverse Event Reports:** {faers:,} total reports")
+                        st.markdown(f"âš ï¸ **FAERS Adverse Event Reports:** {faers:,} total reports")
                     else:
-                        st.markdown("⚠️ **FAERS:** No adverse event reports found")
+                        st.markdown("âš ï¸ **FAERS:** No adverse event reports found")
                     
                     # Quick links
                     link_parts = []
                     if fda_data.get('dailymed_link'):
-                        link_parts.append(f"[📋 DailyMed Label]({fda_data['dailymed_link']})")
+                        link_parts.append(f"[ðŸ“‹ DailyMed Label]({fda_data['dailymed_link']})")
                     if fda_data.get('drugsfda_link'):
-                        link_parts.append(f"[🏛️ Drugs@FDA]({fda_data['drugsfda_link']})")
+                        link_parts.append(f"[ðŸ›ï¸ Drugs@FDA]({fda_data['drugsfda_link']})")
                     if link_parts:
                         st.markdown(" | ".join(link_parts))
                 else:
-                    st.info(f"No openFDA NDC record found for '{target_vaccine}'. The FDA database covers approved/marketed products — early-stage pipeline assets won't appear here.")
+                    st.info(f"No openFDA NDC record found for '{target_vaccine}'. The FDA database covers approved/marketed products â€” early-stage pipeline assets won't appear here.")
                     
         with col_news:
-            with st.expander(f"📰 Recent Publications for '{target_vaccine}'", icon="📡"):
+            with st.expander(f"ðŸ“° Recent Publications for '{target_vaccine}'", icon="ðŸ“¡"):
                 news_items_v = fetch_pipeline_publications(target_vaccine, max_items=5)
                 if news_items_v:
                     for item in news_items_v:
@@ -2283,14 +2283,14 @@ with tab2:
                         if item.get('pubdate'):
                             caption_parts.append(item['pubdate'])
                         if caption_parts:
-                            st.caption(" · ".join(caption_parts))
+                            st.caption(" Â· ".join(caption_parts))
                 else:
                     st.info("No recent publications found.")
         
         show_interactive_df(df_vaccine_filtered, key="vaccine_tab", height=320)
 
         # Gemini-powered unified vaccine intelligence (single combined entry point)
-        if st.button("🧠 Unified Vaccine Intelligence (Gemini)", key="vaccine_intel"):
+        if st.button("ðŸ§  Unified Vaccine Intelligence (Gemini)", key="vaccine_intel"):
             with st.spinner("Generating unified Gemini intelligence brief..."):
                 mfr_for_llm = _get_vaccine_manufacturer(target_vaccine)
                 wiki_ctx = _fetch_wikipedia_summary(target_vaccine)
@@ -2304,13 +2304,13 @@ with tab2:
                     external_context=wiki_ctx,
                 )
             if intel_text:
-                st.markdown("#### 🤖 Unified Vaccine Intelligence (Gemini)")
+                st.markdown("#### ðŸ¤– Unified Vaccine Intelligence (Gemini)")
                 st.write(intel_text)
 
                 pdf_buffer = generate_pdf_summary(intel_text, f"Vaccine Intelligence - {target_vaccine}")
                 if pdf_buffer:
                     st.download_button(
-                        label="📄 Download Gemini Intelligence PDF",
+                        label="ðŸ“„ Download Gemini Intelligence PDF",
                         data=pdf_buffer,
                         file_name=f"vaccine_intel_{target_vaccine.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
                         mime="application/pdf",
@@ -2321,7 +2321,7 @@ with tab2:
                 st.warning(intel_err)
 
         selected_vaccine_id = st.selectbox(
-            "🔬 View Detailed Info",
+            "ðŸ”¬ View Detailed Info",
             options=["Select a study..."] + [str(x) for x in df_vaccine_filtered["NCT ID"].tolist()],
             key="select_vaccine_detail"
         )
@@ -2332,7 +2332,7 @@ with tab2:
 
             if details_v:
                 st.markdown("---")
-                st.subheader(f"📋 Study Details: {selected_vaccine_id}")
+                st.subheader(f"ðŸ“‹ Study Details: {selected_vaccine_id}")
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -2357,7 +2357,7 @@ with tab2:
                 # Enhanced details (same as tab 1)
                 if details_v.get("Design"):
                     design = details_v["Design"]
-                    with st.expander("📐 Study Design Details"):
+                    with st.expander("ðŸ“ Study Design Details"):
                         col_d1, col_d2 = st.columns(2)
                         with col_d1:
                             if design.get("study_type"):
@@ -2375,15 +2375,15 @@ with tab2:
                                 st.markdown(f"**Number of Arms:** {design.get('number_of_arms')}")
 
                 if details_v.get("Diseases"):
-                    st.markdown("**🦠 Diseases/Conditions:**")
+                    st.markdown("**ðŸ¦  Diseases/Conditions:**")
                     st.write(", ".join(details_v["Diseases"]))
 
-                st.markdown("**💉 Vaccine Products:**")
+                st.markdown("**ðŸ’‰ Vaccine Products:**")
                 for v in details_v["Vaccines"]:
                     st.markdown(f"- {v}")
 
                 if details_v.get("Locations"):
-                    with st.expander("🌍 Study Locations"):
+                    with st.expander("ðŸŒ Study Locations"):
                         for loc in details_v["Locations"][:10]:
                             loc_str = f"{loc.get('name', '')}"
                             if loc.get("city"):
@@ -2392,10 +2392,10 @@ with tab2:
                                 loc_str += f", {loc.get('state')}"
                             if loc.get("country"):
                                 loc_str += f", {loc.get('country')}"
-                            st.write(f"• {loc_str}")
+                            st.write(f"â€¢ {loc_str}")
 
                 if details_v.get("Eligibility"):
-                    with st.expander("👥 Eligibility Criteria"):
+                    with st.expander("ðŸ‘¥ Eligibility Criteria"):
                         elig = details_v["Eligibility"]
                         if elig.get("gender"):
                             st.markdown(f"**Gender:** {elig.get('gender')}")
@@ -2409,40 +2409,40 @@ with tab2:
                             st.text(elig.get("criteria")[:500] + "..." if len(elig.get("criteria", "")) > 500 else elig.get("criteria"))
 
                 if details_v.get("Collaborators"):
-                    st.markdown("**🤝 Collaborators:**")
+                    st.markdown("**ðŸ¤ Collaborators:**")
                     st.write(", ".join(details_v["Collaborators"]))
 
                 if details_v["Outcomes"]:
-                    st.markdown("**📊 Primary Outcome Measures:**")
+                    st.markdown("**ðŸ“Š Primary Outcome Measures:**")
                     for o in details_v["Outcomes"]:
-                        st.write(f"• {o['Title']}")
+                        st.write(f"â€¢ {o['Title']}")
                         if o["Description"]:
                             st.caption(o["Description"])
                 else:
                     st.info("No outcomes reported yet.")
 
                 if details_v.get("Results"):
-                    st.success("✅ Results data available for this study")
+                    st.success("âœ… Results data available for this study")
 
                 if details_v.get("PubMed_Articles"):
-                    with st.expander(f"📚 PubMed Articles ({len(details_v['PubMed_Articles'])})"):
+                    with st.expander(f"ðŸ“š PubMed Articles ({len(details_v['PubMed_Articles'])})"):
                         for pm in details_v["PubMed_Articles"]:
                             authors = ", ".join(pm["authors"]) + (" et al." if len(pm["authors"]) == 3 else "")
                             st.markdown(f"**[{pm['title']}](https://pubmed.ncbi.nlm.nih.gov/{pm['pmid']})**")
                             st.caption(f"{pm['source']} | {pm['pubdate']} | {authors}")
 
-                if st.button("🧠 Summarize This Study", key=f"summarize_vaccine_detail_{selected_vaccine_id}"):
+                if st.button("ðŸ§  Summarize This Study", key=f"summarize_vaccine_detail_{selected_vaccine_id}"):
                     with st.spinner("Creating AI trial brief..."):
                         trial_summary_v, detail_err_v = _summarize_single_trial(selected_vaccine_id, details_v)
                     if trial_summary_v:
-                        st.markdown("#### 🤖 AI Trial Brief")
+                        st.markdown("#### ðŸ¤– AI Trial Brief")
                         st.write(trial_summary_v)
                         
                         # Export button
                         pdf_buffer = generate_pdf_summary(trial_summary_v, f"Trial Brief - {selected_vaccine_id}")
                         if pdf_buffer:
                             st.download_button(
-                                label="📄 Download PDF Report",
+                                label="ðŸ“„ Download PDF Report",
                                 data=pdf_buffer,
                                 file_name=f"trial_brief_{selected_vaccine_id}_{datetime.now().strftime('%Y%m%d')}.pdf",
                                 mime="application/pdf",
@@ -2455,12 +2455,12 @@ with tab2:
     # Show competitor trials (existing filters kept as-is)
     if competitor_trials:
         st.markdown("---")
-        st.subheader(f"🔄 Competitor Vaccines for {', '.join(target_diseases) if target_diseases else 'Same Disease'}")
+        st.subheader(f"ðŸ”„ Competitor Vaccines for {', '.join(target_diseases) if target_diseases else 'Same Disease'}")
         st.caption("All other vaccines targeting the same disease(s)")
 
         df_competitor = pd.DataFrame(competitor_trials)
 
-        st.sidebar.header("🎛️ Competitor Filters")
+        st.sidebar.header("ðŸŽ›ï¸ Competitor Filters")
         phase_options_c = sorted({p.strip() for val in df_competitor["Phase"].dropna() for p in str(val).split(",")})
         status_options_c = sorted([s for s in df_competitor["Status"].dropna().unique()])
 
@@ -2479,7 +2479,7 @@ with tab2:
         if selected_status_c:
             df_competitor_filtered = df_competitor_filtered[df_competitor_filtered["Status"].isin(selected_status_c)]
 
-        st.info(f"📊 Showing {len(df_competitor_filtered)} of {len(competitor_trials)} competitor trials")
+        st.info(f"ðŸ“Š Showing {len(df_competitor_filtered)} of {len(competitor_trials)} competitor trials")
         
         # Competitor visualizations
         col_c1, col_c2, col_c3 = st.columns(3)
@@ -2498,21 +2498,21 @@ with tab2:
         
         show_interactive_df(df_competitor_filtered, key="competitor_tab", height=420)
 
-        if st.button("🧠 Summarize Competitor Trials", key="summarize_comp_trials"):
+        if st.button("ðŸ§  Summarize Competitor Trials", key="summarize_comp_trials"):
             with st.spinner("Creating AI competitor synopsis..."):
                 comp_summary, comp_err = _summarize_trials_with_llm(
                     df_competitor_filtered.to_dict("records"),
                     context_instructions=f"Competitor vaccines targeting diseases: {', '.join(target_diseases) if target_diseases else 'Unknown'}."
                 )
             if comp_summary:
-                st.markdown("#### 🤖 AI Summary — Competitors")
+                st.markdown("#### ðŸ¤– AI Summary â€” Competitors")
                 st.write(comp_summary)
                 
                 # Export button
                 pdf_buffer = generate_pdf_summary(comp_summary, f"Competitor Analysis - {', '.join(target_diseases) if target_diseases else 'Competitors'}")
                 if pdf_buffer:
                     st.download_button(
-                        label="📄 Download PDF Report",
+                        label="ðŸ“„ Download PDF Report",
                         data=pdf_buffer,
                         file_name=f"competitor_analysis_{datetime.now().strftime('%Y%m%d')}.pdf",
                         mime="application/pdf",
@@ -2523,7 +2523,7 @@ with tab2:
                 st.warning(comp_err)
 
         selected_comp_id = st.selectbox(
-            "🔬 View Competitor Trial Details",
+            "ðŸ”¬ View Competitor Trial Details",
             options=["Select a study..."] + [str(x) for x in df_competitor_filtered["NCT ID"].tolist()],
             key="select_comp_detail"
         )
@@ -2534,7 +2534,7 @@ with tab2:
 
             if details_c:
                 st.markdown("---")
-                st.subheader(f"📋 Competitor Study: {selected_comp_id}")
+                st.subheader(f"ðŸ“‹ Competitor Study: {selected_comp_id}")
 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -2545,40 +2545,40 @@ with tab2:
                     st.markdown(f"**Sponsor:** {details_c['Sponsor']}")
 
                 if details_c.get("Diseases"):
-                    st.markdown("**🦠 Diseases/Conditions:**")
+                    st.markdown("**ðŸ¦  Diseases/Conditions:**")
                     st.write(", ".join(details_c["Diseases"]))
 
-                st.markdown("**💉 Vaccine Products:**")
+                st.markdown("**ðŸ’‰ Vaccine Products:**")
                 for v in details_c["Vaccines"]:
                     st.markdown(f"- {v}")
                 if details_c["Outcomes"]:
-                    st.markdown("**📊 Primary Outcome Measures:**")
+                    st.markdown("**ðŸ“Š Primary Outcome Measures:**")
                     for o in details_c["Outcomes"]:
-                        st.write(f"• {o['Title']}")
+                        st.write(f"â€¢ {o['Title']}")
                         if o["Description"]:
                             st.caption(o["Description"])
 
                 if details_c.get("PubMed_Articles"):
-                    with st.expander(f"📚 PubMed Articles ({len(details_c['PubMed_Articles'])})"):
+                    with st.expander(f"ðŸ“š PubMed Articles ({len(details_c['PubMed_Articles'])})"):
                         for pm in details_c["PubMed_Articles"]:
                             authors = ", ".join(pm["authors"]) + (" et al." if len(pm["authors"]) == 3 else "")
                             st.markdown(f"**[{pm['title']}](https://pubmed.ncbi.nlm.nih.gov/{pm['pmid']})**")
                             st.caption(f"{pm['source']} | {pm['pubdate']} | {authors}")
 
-                if st.button("🧠 Summarize This Study", key=f"summarize_comp_detail_{selected_comp_id}"):
+                if st.button("ðŸ§  Summarize This Study", key=f"summarize_comp_detail_{selected_comp_id}"):
                     with st.spinner("Creating AI trial brief..."):
                         trial_summary_c, detail_err_c = _summarize_single_trial(selected_comp_id, details_c)
                     if trial_summary_c:
-                        st.markdown("#### 🤖 AI Trial Brief")
+                        st.markdown("#### ðŸ¤– AI Trial Brief")
                         st.write(trial_summary_c)
                     elif detail_err_c:
                         st.warning(detail_err_c)
 
 if not st.session_state.get("vaccine_trials") and not st.session_state.get("competitor_trials"):
-    st.info("👆 Enter a vaccine product name and click Search Vaccine & Competitors to begin.")
+    st.info("ðŸ‘† Enter a vaccine product name and click Search Vaccine & Competitors to begin.")
 
 
 
 # ---------------- Footer ----------------
 st.markdown("---")
-st.caption("💡 Vaccine Pipeline Platform | Data from ClinicalTrials.gov | Developed by Aman & Smriti")
+st.caption("ðŸ’¡ Vaccine Pipeline Platform | Data from ClinicalTrials.gov | Developed by Aman & Smriti")
