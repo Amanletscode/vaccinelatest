@@ -1,0 +1,18 @@
+{
+  "abrysvo": ["Abrysvo", "PF-06928316", "RSVpreF", "bivalent RSV prefusion F vaccine"],
+  "arexvy": ["Arexvy", "GSK3844766A", "RSVPreF3", "RSV vaccine recombinant adjuvanted"],
+  "comirnaty": ["Comirnaty", "BNT162b2", "tozinameran", "PF-07302048", "Pfizer-BioNTech COVID-19 vaccine"],
+  "spikevax": ["Spikevax", "mRNA-1273", "elasomeran", "Moderna COVID-19 vaccine"],
+  "shingrix": ["Shingrix", "GSK1437173A", "HZ/su", "zoster vaccine recombinant adjuvanted"],
+  "gardasil 9": ["Gardasil 9", "V503", "9vHPV", "recombinant human papillomavirus 9-valent vaccine"],
+  "bexsero": ["Bexsero", "4CMenB", "GSK3332402A", "meningococcal group B vaccine"],
+  "fluzone high dose": ["Fluzone High-Dose", "high-dose trivalent influenza vaccine", "TIV-HD", "Fluzone High-Dose Quadrivalent"],
+  "prevnar 20": ["Prevnar 20", "PCV20", "20-valent pneumococcal conjugate vaccine", "PF-06482077"],
+  "prevnar 13": ["Prevnar 13", "Prevenar 13", "PCV13", "13-valent pneumococcal conjugate vaccine"],
+  "vaxneuvance": ["Vaxneuvance", "V114", "PCV15", "15-valent pneumococcal conjugate vaccine"],
+  "jynneos": ["Jynneos", "MVA-BN", "Imvamune", "Imvanex", "modified vaccinia ankara"],
+  "ervebo": ["Ervebo", "rVSV-ZEBOV", "V920", "Ebola Zaire vaccine live"],
+  "nuvaxovid": ["Nuvaxovid", "NVX-CoV2373", "recombinant nanoparticle COVID-19 vaccine"],
+  "vyvgart": ["Vyvgart", "efgartigimod", "ARGX-113", "efgartigimod alfa"],
+  "penbraya": ["Penbraya", "PF-06886992", "pentavalent meningococcal vaccine"]
+}

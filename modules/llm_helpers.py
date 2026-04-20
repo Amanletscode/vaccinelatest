@@ -438,6 +438,51 @@ def _infer_manufacturer_llm(vaccine_name: str) -> str:
     return None
 
 
+def _infer_vaccine_aliases_llm(vaccine_name: str) -> list:
+    """Use Gemini Flash to infer all known aliases for a vaccine/drug.
+
+    Returns a list of alias strings (brand name, INN, compound codes).
+    Falls back to ``[vaccine_name]`` on any failure.
+    """
+    system_prompt = (
+        "You are a pharmaceutical data extractor. Given a vaccine or drug name, "
+        "return a JSON list of strings containing ALL known names for this product: "
+        "the commercial brand name, generic/INN name, and all historical "
+        "investigational compound codes (e.g. PF-xxxxx, GSKxxxxxxx, BNTxxxxx, "
+        "mRNA-xxxx). Include only real, verifiable names. "
+        "Output ONLY a valid JSON list, nothing else. "
+        'Example for Arexvy: ["Arexvy", "GSK3844766A", "RSVPreF3"]'
+    )
+    user_prompt = f"Vaccine/drug name: {vaccine_name}"
+    response, err = _call_gemini(
+        [{"role": "system", "content": system_prompt},
+         {"role": "user", "content": user_prompt}],
+        model="models/gemini-1.5-flash-latest",
+        temperature=0.0,
+    )
+    if response:
+        try:
+            text = response.strip()
+            # Strip markdown code fences if the model wraps output
+            if text.startswith("```"):
+                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+                if text.endswith("```"):
+                    text = text[:-3]
+                text = text.strip()
+            aliases = json.loads(text)
+            if isinstance(aliases, list) and aliases:
+                # Guarantee the original name is included
+                result = [vaccine_name]
+                for a in aliases:
+                    if isinstance(a, str) and a.strip():
+                        if a.strip().lower() != vaccine_name.strip().lower():
+                            result.append(a.strip())
+                return result
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return [vaccine_name]
+
+
 # ════════════════════════════════════════════════════════════════
 #  HEAD-TO-HEAD VACCINE COMPARISON
 # ════════════════════════════════════════════════════════════════
