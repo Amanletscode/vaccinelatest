@@ -35,6 +35,7 @@ from modules.data_extraction import (
 )
 from modules.vaccine_data import (
     _extract_vaccine_names,
+    _matches_vaccine_name,
     _is_vaccine_study,
     _VACCINE_SYNONYM_INDEX,
     _VACCINE_SYNONYM_GROUPS,
@@ -200,6 +201,106 @@ def fetch_trial_details_with_vaccines(nct_id: str):
         }
     except requests.RequestException:
         return None
+
+
+# ════════════════════════════════════════════════════════════════
+#  VACCINE SEARCH BY ONTOLOGY ALIASES  (OR-query)
+# ════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_vaccine_trials_by_aliases(aliases_tuple: tuple, max_pages: int = 5):
+    """Fetch vaccine trials using a **single OR query** built from ontology aliases.
+
+    Instead of making *N* separate API calls (one per alias), this function
+    concatenates all aliases into one ``query.intr`` OR expression, which
+    captures historical trials registered under any alias name.
+
+    Parameters
+    ----------
+    aliases_tuple : tuple of str
+        All known names/codes for the vaccine (tuple for ``st.cache_data`` hashability).
+    max_pages : int
+        Maximum API result pages to fetch (100 studies per page).
+
+    Returns
+    -------
+    dict
+        ``{"trials": list[dict], "diseases": list[str]}``
+        Trial dicts include ``Start Date`` and ``Completion Date`` for trend analysis.
+    """
+    aliases = list(aliases_tuple)
+    if not aliases:
+        return {"trials": [], "diseases": []}
+
+    from modules.utils import _norm_txt as _nt  # local alias to avoid shadowing
+    target_norms = [_nt(a) for a in aliases if _nt(a)]
+
+    # Build OR query — always quote terms so spaces/slashes are safe
+    def _quote(term):
+        return f'"{ term }"'
+
+    or_query = " OR ".join(_quote(a) for a in aliases)
+
+    url = "https://clinicaltrials.gov/api/v2/studies"
+    all_results = []
+    all_diseases = []
+    page_token = None
+    page_count = 0
+    seen = set()
+    session = requests.Session()
+    headers = {"User-Agent": "VaccinePipeline/1.0"}
+
+    try:
+        while page_count < max_pages:
+            params = {"query.intr": or_query, "pageSize": 100}
+            if page_token:
+                params["pageToken"] = page_token
+            data = _request_json(url, params=params, session=session, headers=headers)
+            studies = data.get("studies", []) or []
+            if not studies:
+                break
+            for s in studies:
+                names = _extract_vaccine_names(s)
+                if not _matches_vaccine_name(names, target_norms):
+                    continue
+                if not _is_vaccine_study(s):
+                    continue
+                proto = s.get("protocolSection", {}) or {}
+                ident = proto.get("identificationModule", {}) or {}
+                design = proto.get("designModule", {}) or {}
+                status_mod = proto.get("statusModule", {}) or {}
+                sponsor_mod = proto.get("sponsorCollaboratorsModule", {}) or {}
+                nct_id = ident.get("nctId")
+                if not nct_id or nct_id in seen:
+                    continue
+                seen.add(nct_id)
+                locations = _extract_locations(s)
+                trial_obj = {
+                    "NCT ID": str(nct_id),
+                    "Title": str(ident.get("briefTitle") or ident.get("officialTitle") or "No title"),
+                    "Phase": ", ".join(design.get("phases") or ["Not reported"]),
+                    "Status": str(status_mod.get("overallStatus") or "Unknown"),
+                    "Sponsor": str(sponsor_mod.get("leadSponsor", {}).get("name", "Unknown")),
+                    "Vaccines": ", ".join(names) if names else "Not reported",
+                    "Locations": locations,
+                    "Publications": _check_for_publications(s),
+                    "Start Date": str(status_mod.get("startDateStruct", {}).get("date", "") or ""),
+                    "Completion Date": str(status_mod.get("completionDateStruct", {}).get("date", "") or ""),
+                }
+                all_results.append(trial_obj)
+                # Collect diseases for competitor search
+                ds = list(proto.get("conditionsModule", {}).get("conditions", []) or [])
+                ds.extend(_mesh_terms_condition(s))
+                all_diseases.extend(ds)
+            page_token = data.get("nextPageToken")
+            page_count += 1
+            if not page_token:
+                break
+            time.sleep(0.25)
+    except requests.RequestException as e:
+        st.error(f"Error fetching data: {e}")
+
+    return {"trials": all_results, "diseases": all_diseases}
 
 
 # ════════════════════════════════════════════════════════════════

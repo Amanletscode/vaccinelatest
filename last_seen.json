@@ -1,0 +1,24 @@
+{
+  "abrysvo": {
+    "trial_count": 19,
+    "pub_ids": [
+      "https://pubmed.ncbi.nlm.nih.gov/40901480/",
+      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
+      "https://pubmed.ncbi.nlm.nih.gov/40862314/",
+      "https://pubmed.ncbi.nlm.nih.gov/41104031/",
+      "https://pubmed.ncbi.nlm.nih.gov/39744803/"
+    ],
+    "checked": "2026-04-21 10:10"
+  },
+  "arexvy": {
+    "trial_count": 31,
+    "pub_ids": [
+      "https://pubmed.ncbi.nlm.nih.gov/40901480/",
+      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
+      "https://pubmed.ncbi.nlm.nih.gov/41531504/",
+      "https://pubmed.ncbi.nlm.nih.gov/40862314/",
+      "https://pubmed.ncbi.nlm.nih.gov/39744803/"
+    ],
+    "checked": "2026-04-21 10:10"
+  }
+}

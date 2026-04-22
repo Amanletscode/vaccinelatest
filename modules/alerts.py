@@ -93,11 +93,21 @@ def check_watchlist_updates(watchlist: list) -> list:
     For each watchlist item, quickly fetch current trial counts and recent
     publications, then compare to ``last_seen.json``.
 
+    For **vaccine** items the search now uses ontology-expanded aliases via
+    ``fetch_vaccine_trials_by_aliases`` (OR-query) instead of the disease-only
+    ``fetch_all_vaccine_trials`` which previously returned 0 results for
+    vaccine names.
+
     Returns a list of alert dicts:
     ``{name, type, new_trials, new_pubs, pub_titles, timestamp}``
     """
     # Import here to avoid circular imports
-    from modules.trial_fetchers import fetch_all_vaccine_trials, fetch_pipeline_publications
+    from modules.trial_fetchers import (
+        fetch_all_vaccine_trials,
+        fetch_pipeline_publications,
+        fetch_vaccine_trials_by_aliases,
+    )
+    from modules.vaccine_data import _get_vaccine_search_terms
 
     if not watchlist:
         return []
@@ -117,12 +127,20 @@ def check_watchlist_updates(watchlist: list) -> list:
         prev_trial_count = prev.get("trial_count", 0)
         prev_pub_ids = set(prev.get("pub_ids", []))
 
-        # Fetch current data (only page 1 for speed)
+        # Fetch current data
         try:
-            trials = fetch_all_vaccine_trials(name, max_pages=1) if itype == "disease" else []
-            if itype == "vaccine":
-                # For vaccines we do a lighter check — same call path but limited
+            if itype == "disease":
                 trials = fetch_all_vaccine_trials(name, max_pages=1)
+            else:
+                # Vaccine: use ontology aliases → OR-query (fixed)
+                search_terms = _get_vaccine_search_terms(name)
+                if search_terms:
+                    result = fetch_vaccine_trials_by_aliases(
+                        tuple(search_terms), max_pages=1,
+                    )
+                    trials = result.get("trials", []) if isinstance(result, dict) else []
+                else:
+                    trials = []
         except Exception:
             trials = []
 

@@ -323,6 +323,57 @@ def _get_vaccine_manufacturer(raw_name: str, use_llm_fallback: bool = True):
 
 
 # ════════════════════════════════════════════════════════════════
+#  ONTOLOGY ENRICHMENT FROM TRIAL DATA
+# ════════════════════════════════════════════════════════════════
+
+_NOISE_INTERVENTION_TERMS = {
+    "placebo", "saline", "normal saline", "control", "comparator",
+    "adjuvant", "diluent", "buffer", "sham", "observation",
+    "standard of care", "no intervention", "not reported",
+}
+
+
+def _enrich_ontology_from_trials(search_key: str, trials: list):
+    """Scan fetched trial results and additively merge any new vaccine names
+    discovered in intervention fields back into the ontology.
+
+    This is the 'learning from real data' step that builds the dictionary
+    over time.  Only ADDS new names — never removes existing ones.
+    Common noise terms (placebo, saline, etc.) are filtered out.
+    """
+    norm_key = _norm_txt(search_key)
+    if not norm_key:
+        return
+
+    ontology = _load_ontology()
+    existing = list(ontology.get(norm_key, []))
+    existing_norms = {_norm_txt(a) for a in existing if a}
+
+    new_names = []
+    for t in trials:
+        vaccines_str = t.get("Vaccines", "")
+        if isinstance(vaccines_str, str):
+            names = [n.strip() for n in vaccines_str.split(",") if n.strip()]
+        elif isinstance(vaccines_str, list):
+            names = list(vaccines_str)
+        else:
+            continue
+        for name in names:
+            if not name or name == "Not reported":
+                continue
+            norm = _norm_txt(name)
+            if norm and norm not in existing_norms and norm not in _NOISE_INTERVENTION_TERMS:
+                new_names.append(name)
+                existing_norms.add(norm)  # prevent duplicates within batch
+
+    if new_names:
+        _save_ontology_entry(norm_key, existing + new_names)
+        _merge_single_entry_into_synonym_index(
+            norm_key, existing + new_names, _VACCINE_SYNONYM_INDEX
+        )
+
+
+# ════════════════════════════════════════════════════════════════
 #  VACCINE NAME EXTRACTION & MATCHING
 # ════════════════════════════════════════════════════════════════
 
@@ -350,7 +401,13 @@ def _extract_vaccine_names(study) -> list:
 def _matches_vaccine_name(names, target_norms) -> bool:
     """True if the normalised target name matches any intervention name.
 
-    ``target_norms`` now includes ontology-expanded aliases, so matching
+    Matching strategy (in priority order):
+    1. Exact normalised string match
+    2. Token match  (target is a standalone word in the name)
+    3. Substring match for terms ≥ 5 chars (catches compound codes
+       embedded in longer intervention descriptions)
+
+    ``target_norms`` includes ontology-expanded aliases, so matching
     is automatically broader (catches compound codes, INNs, etc.).
     """
     if isinstance(target_norms, str):
@@ -364,7 +421,14 @@ def _matches_vaccine_name(names, target_norms) -> bool:
             continue
         tokens = set(norm.split())
         for t in target_norms:
-            if norm == t or t in tokens:
+            # 1. Exact match
+            if norm == t:
+                return True
+            # 2. Token match
+            if t in tokens:
+                return True
+            # 3. Substring match (≥5 chars avoids false positives from short terms)
+            if len(t) >= 5 and t in norm:
                 return True
     return False
 
