@@ -1,24 +1,35 @@
 {
-  "abrysvo": {
-    "trial_count": 19,
-    "pub_ids": [
-      "https://pubmed.ncbi.nlm.nih.gov/40901480/",
-      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
-      "https://pubmed.ncbi.nlm.nih.gov/40862314/",
-      "https://pubmed.ncbi.nlm.nih.gov/41104031/",
-      "https://pubmed.ncbi.nlm.nih.gov/39744803/"
-    ],
-    "checked": "2026-04-21 10:10"
-  },
   "arexvy": {
     "trial_count": 31,
     "pub_ids": [
-      "https://pubmed.ncbi.nlm.nih.gov/40901480/",
-      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
+      "https://pubmed.ncbi.nlm.nih.gov/39744803/",
       "https://pubmed.ncbi.nlm.nih.gov/41531504/",
       "https://pubmed.ncbi.nlm.nih.gov/40862314/",
-      "https://pubmed.ncbi.nlm.nih.gov/39744803/"
+      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
+      "https://pubmed.ncbi.nlm.nih.gov/40901480/"
     ],
-    "checked": "2026-04-21 10:10"
+    "checked": "2026-04-22 11:41"
+  },
+  "comirnaty": {
+    "trial_count": 46,
+    "pub_ids": [
+      "https://pubmed.ncbi.nlm.nih.gov/41999674/",
+      "https://pubmed.ncbi.nlm.nih.gov/41848549/",
+      "https://pubmed.ncbi.nlm.nih.gov/41948336/",
+      "https://pubmed.ncbi.nlm.nih.gov/41655623/",
+      "https://pubmed.ncbi.nlm.nih.gov/41655468/"
+    ],
+    "checked": "2026-04-22 11:41"
+  },
+  "abrysvo": {
+    "trial_count": 20,
+    "pub_ids": [
+      "https://pubmed.ncbi.nlm.nih.gov/39744803/",
+      "https://pubmed.ncbi.nlm.nih.gov/41104031/",
+      "https://pubmed.ncbi.nlm.nih.gov/40862314/",
+      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
+      "https://pubmed.ncbi.nlm.nih.gov/40901480/"
+    ],
+    "checked": "2026-04-22 11:41"
   }
 }

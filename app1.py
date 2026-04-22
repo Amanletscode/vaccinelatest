@@ -140,7 +140,14 @@ if watchlist:
         col_wl1, col_wl2 = st.sidebar.columns([3, 1])
         with col_wl1:
             emoji = "💊" if wl_item.get("type") == "vaccine" else "🦠"
-            st.markdown(f"{emoji} {wl_item.get('name', '')}")
+            if st.button(f"{emoji} {wl_item.get('name', '')}", key=f"wl_search_{idx}", help="Click to search"):
+                if wl_item.get("type") == "vaccine":
+                    st.session_state["vaccine_input"] = wl_item.get("name")
+                    st.session_state["trigger_vaccine_search"] = True
+                elif wl_item.get("type") == "disease":
+                    st.session_state["disease_input"] = wl_item.get("name")
+                    st.session_state["trigger_disease_search"] = True
+                st.rerun()
         with col_wl2:
             if st.button("❌", key=f"wl_rm_{idx}"):
                 remove_from_watchlist(wl_item.get("name", ""))
@@ -319,7 +326,20 @@ if watchlist:
                         parts.append(f"🆕 {alert['new_trials']} new trial(s)")
                     if alert["new_pubs"] > 0:
                         parts.append(f"📰 {alert['new_pubs']} new publication(s)")
-                    st.markdown(f"{emoji} **{alert['name']}**: {' · '.join(parts)}")
+                        
+                    alert_col1, alert_col2 = st.columns([3, 1])
+                    with alert_col1:
+                        st.markdown(f"{emoji} **{alert['name']}**: {' · '.join(parts)}")
+                    with alert_col2:
+                        if st.button("🔍 View", key=f"alert_btn_{alert['name']}"):
+                            if alert["type"] == "vaccine":
+                                st.session_state["vaccine_input"] = alert["name"]
+                                st.session_state["trigger_vaccine_search"] = True
+                            else:
+                                st.session_state["disease_input"] = alert["name"]
+                                st.session_state["trigger_disease_search"] = True
+                            st.rerun()
+
                     if alert.get("pub_titles"):
                         for title in alert["pub_titles"]:
                             st.caption(f"   → {title}")
@@ -341,9 +361,14 @@ with tab1:
     st.subheader("Search Vaccine Trials by Disease")
     st.caption("Fetches trials by disease and classifies vaccines using MeSH and heuristics.")
 
-    disease = st.text_input("Enter Disease Name", value="RSV", key="disease_input")
+    if "disease_input" not in st.session_state:
+        st.session_state["disease_input"] = "RSV"
+    disease = st.text_input("Enter Disease Name", key="disease_input")
+    trigger_d = st.session_state.pop("trigger_disease_search", False)
 
-    if st.button("🔍 Fetch All Trials", key="fetch_disease"):
+    if st.button("🔍 Fetch All Trials", key="fetch_disease") or trigger_d:
+        if trigger_d:
+            st.info(f"✅ Auto-searching '{disease}' from Watchlist. Please ensure you are viewing the 'Search by Disease' tab to see results.")
         with st.spinner("Fetching all vaccine trials (this may take a moment)..."):
             studies = fetch_all_vaccine_trials(disease, max_pages=10)
             if not studies:
@@ -449,12 +474,17 @@ with tab2:
     st.subheader("Search Trials by Vaccine Product")
     st.caption("Find your vaccine's trials + competitor vaccines targeting the same disease(s).")
 
-    vaccine_name = st.text_input("Enter Vaccine Product Name", value="", key="vaccine_input")
+    if "vaccine_input" not in st.session_state:
+        st.session_state["vaccine_input"] = ""
+    vaccine_name = st.text_input("Enter Vaccine Product Name", key="vaccine_input")
+    trigger_v = st.session_state.pop("trigger_vaccine_search", False)
 
-    if st.button("💊 Search Vaccine & Competitors", key="fetch_vaccine"):
+    if st.button("💊 Search Vaccine & Competitors", key="fetch_vaccine") or trigger_v:
         if not vaccine_name.strip():
             st.warning("Please enter a vaccine name.")
         else:
+            if trigger_v:
+                st.info(f"✅ Auto-searching '{vaccine_name}' from Watchlist. Please ensure you are viewing the 'Search by Vaccine Product' tab to see results.")
             search_url = "https://clinicaltrials.gov/api/v2/studies"
             try:
                 with st.spinner(f"Step 1/2: Finding trials for '{vaccine_name}'..."):
