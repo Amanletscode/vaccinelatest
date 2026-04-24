@@ -81,6 +81,15 @@ load_dotenv()
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
+def format_fda_date(raw_date_str):
+    """Converts FDA raw dates (YYYYMMDD or YYYY-MM-DD) into readable formats."""
+    if not raw_date_str: return "Unknown"
+    raw_date_str = raw_date_str.replace("-", "")
+    if len(raw_date_str) == 8 and raw_date_str.isdigit():
+        return datetime.strptime(raw_date_str, "%Y%m%d").strftime("%B %d, %Y")
+    return raw_date_str
+
+
 # ══════════════════════════════════════════════════════════════
 #  APP CONFIG
 # ══════════════════════════════════════════════════════════════
@@ -560,6 +569,8 @@ with tab2:
                                 "Vaccines": ", ".join(names) if names else "Not reported",
                                 "Locations": locations,
                                 "Publications": _check_for_publications(s),
+                                "Start Date": str(status_mod.get("startDateStruct", {}).get("date", "") or ""),
+                                "Completion Date": str(status_mod.get("completionDateStruct", {}).get("date", "") or ""),
                             }
                             vaccine_results.append(trial_obj_v)
                             ds = []
@@ -718,7 +729,8 @@ with tab2:
                         if fda_data.get("application_number"):
                             st.markdown(f"**Application #:** {fda_data['application_number']}")
                         if fda_data.get("marketing_start_date"):
-                            st.markdown(f"**Marketing Start:** {fda_data['marketing_start_date']}")
+                            clean_date = format_fda_date(fda_data['marketing_start_date'])
+                            st.markdown(f"**FDA Approval / Market Entry:** {clean_date}")
                         if fda_data.get("dosage_form"):
                             st.markdown(f"**Dosage Form:** {fda_data['dosage_form']}")
                     if fda_data.get("route"):
