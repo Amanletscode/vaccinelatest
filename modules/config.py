@@ -5,8 +5,8 @@ This module centralises every tuneable constant so that contributors
 can change behaviour without hunting through 2 500+ lines of app code.
 """
 
-# Default Gemini model used for intelligence summaries
-DEFAULT_LLM_MODEL = "models/gemini-robotics-er-1.5-preview"
+# Default Gemini model used for intelligence summaries (Set to 2.5 Flash for safety/speed)
+DEFAULT_LLM_MODEL = "models/gemini-2.5-flash"
 
 # How many trials to send to the LLM in a single summarisation call
 MAX_TRIALS_FOR_SUMMARY = 10
@@ -16,17 +16,17 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 # Models exposed in the Streamlit sidebar selector
 GEMINI_MODEL_OPTIONS = {
-    "Robotics 1.5 Preview (default)": DEFAULT_LLM_MODEL,
-    "Gemini 1.5 Pro (general analysis)": "models/gemini-1.5-pro-latest",
-    "Gemini 1.5 Flash (fast, cheaper)": "models/gemini-1.5-flash-latest",
+    "Gemini 2.5 Flash (Ultra-Fast & Safe)": "models/gemini-2.5-flash",
+    "Gemini 2.5 Pro (Deep Analysis)": "models/gemini-2.5-pro",
+    "Robotics 1.5 Preview (Experimental)": "models/gemini-robotics-er-1.5-preview",
 }
 
 # ── Model output token limits ──
 # Max output tokens each model supports (conservative estimates for safe usage)
 GEMINI_MODEL_TOKEN_LIMITS = {
+    "models/gemini-2.5-flash": 8192,
+    "models/gemini-2.5-pro": 8192,
     "models/gemini-robotics-er-1.5-preview": 8192,
-    "models/gemini-1.5-pro-latest": 8192,
-    "models/gemini-1.5-flash-latest": 8192,
 }
 DEFAULT_TOKEN_LIMIT = 8192  # fallback for unknown models
 
