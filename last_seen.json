@@ -34,44 +34,12 @@
       "NCT06556147": "ACTIVE_NOT_RECRUITING"
     },
     "pub_ids": [
-      "https://pubmed.ncbi.nlm.nih.gov/41833132/",
-      "https://pubmed.ncbi.nlm.nih.gov/41972600/",
-      "https://pubmed.ncbi.nlm.nih.gov/41884825/",
-      "https://pubmed.ncbi.nlm.nih.gov/41767892/",
-      "https://pubmed.ncbi.nlm.nih.gov/42001739/"
+      "https://pubmed.ncbi.nlm.nih.gov/41531504/",
+      "https://pubmed.ncbi.nlm.nih.gov/40862314/",
+      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
+      "https://pubmed.ncbi.nlm.nih.gov/39744803/",
+      "https://pubmed.ncbi.nlm.nih.gov/40901480/"
     ],
-    "checked": "2026-04-24 12:35"
-  },
-  "abrysvo": {
-    "trials": {
-      "NCT05035212": "ACTIVE_NOT_RECRUITING",
-      "NCT05170399": "RECRUITING",
-      "NCT07296120": "NOT_YET_RECRUITING",
-      "NCT06593587": "COMPLETED",
-      "NCT05788237": "COMPLETED",
-      "NCT06684743": "RECRUITING",
-      "NCT06077968": "ACTIVE_NOT_RECRUITING",
-      "NCT05096208": "COMPLETED",
-      "NCT06866405": "RECRUITING",
-      "NCT07279298": "NOT_YET_RECRUITING",
-      "NCT06482099": "COMPLETED",
-      "NCT06546800": "ACTIVE_NOT_RECRUITING",
-      "NCT07543380": "NOT_YET_RECRUITING",
-      "NCT07097012": "RECRUITING",
-      "NCT06551506": "ACTIVE_NOT_RECRUITING",
-      "NCT05886777": "COMPLETED",
-      "NCT05301322": "COMPLETED",
-      "NCT06473519": "COMPLETED",
-      "NCT06890416": "COMPLETED",
-      "NCT06325657": "COMPLETED"
-    },
-    "pub_ids": [
-      "https://pubmed.ncbi.nlm.nih.gov/41833132/",
-      "https://pubmed.ncbi.nlm.nih.gov/41884825/",
-      "https://pubmed.ncbi.nlm.nih.gov/42001739/",
-      "https://pubmed.ncbi.nlm.nih.gov/42021786/",
-      "https://pubmed.ncbi.nlm.nih.gov/41934687/"
-    ],
-    "checked": "2026-04-24 12:35"
+    "checked": "2026-04-24 10:54"
   }
 }
