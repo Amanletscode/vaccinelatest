@@ -321,15 +321,16 @@ if watchlist:
             if alerts:
                 for alert in alerts:
                     emoji = "💊" if alert["type"] == "vaccine" else "🦠"
-                    parts = []
-                    if alert["new_trials"] > 0:
-                        parts.append(f"🆕 {alert['new_trials']} new trial(s)")
-                    if alert["new_pubs"] > 0:
-                        parts.append(f"📰 {alert['new_pubs']} new publication(s)")
-                        
-                    alert_col1, alert_col2 = st.columns([3, 1])
+                    
+                    # 1. Extract the lists from the new alert dictionary structure
+                    new_trials_list = alert.get("new_trials", [])
+                    status_changes = alert.get("status_changes", [])
+                    new_pubs = alert.get("new_pubs", 0)
+
+                    # 2. Header and View Button
+                    alert_col1, alert_col2 = st.columns([4, 1])
                     with alert_col1:
-                        st.markdown(f"{emoji} **{alert['name']}**: {' · '.join(parts)}")
+                        st.markdown(f"#### {emoji} **{alert['name'].upper()}**")
                     with alert_col2:
                         if st.button("🔍 View", key=f"alert_btn_{alert['name']}"):
                             if alert["type"] == "vaccine":
@@ -340,9 +341,27 @@ if watchlist:
                                 st.session_state["trigger_disease_search"] = True
                             st.rerun()
 
-                    if alert.get("pub_titles"):
-                        for title in alert["pub_titles"]:
-                            st.caption(f"   → {title}")
+                    # 3. Display New Trials
+                    if len(new_trials_list) > 0:
+                        st.toast(f"🚨 {alert['name'].upper()}: {len(new_trials_list)} New Trials Detected!", icon="🚨")
+                        for nt in new_trials_list:
+                            st.markdown(f"&nbsp;&nbsp;&nbsp;**🆕 New Trial:** `{nt['id']}` is currently **{nt['status']}**")
+
+                    # 4. Display Status Changes
+                    if len(status_changes) > 0:
+                        st.toast(f"📈 {alert['name'].upper()}: Clinical milestone reached!", icon="📈")
+                        for sc in status_changes:
+                            st.markdown(f"&nbsp;&nbsp;&nbsp;**📈 Status Upgrade:** `{sc['id']}` moved from *{sc['old']}* ➡️ **{sc['new']}**")
+
+                    # 5. Display New Publications
+                    if new_pubs > 0:
+                        st.toast(f"📚 {alert['name'].upper()}: {new_pubs} New Publications", icon="📚")
+                        st.markdown(f"&nbsp;&nbsp;&nbsp;**📚 {new_pubs} New Publications Found:**")
+                        if alert.get("pub_titles"):
+                            for title in alert["pub_titles"]:
+                                st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;→ {title}")
+                    
+                    st.divider() # Adds a clean visual break between different vaccines
             else:
                 st.info("No new updates since last check. Your watchlist items are up to date.")
         else:

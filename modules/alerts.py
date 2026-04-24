@@ -3,10 +3,10 @@ alerts.py — Watchlist persistence and poll-on-load alert detection.
 
 Architecture:
 - ``watchlist.json`` stores user-defined vaccines/diseases to monitor.
-- ``last_seen.json`` stores a snapshot of trial counts and publication IDs
-  from the last session.
-- On each app load, ``check_watchlist_updates()`` compares current data
-  to the snapshot and surfaces "new" items as alerts.
+- ``last_seen.json`` stores a dictionary of specific NCT IDs and their statuses
+  from the last session to accurately detect phase progression.
+- On each app load or manual check, ``check_watchlist_updates()`` compares current data
+  to the snapshot and surfaces specific milestone alerts.
 - No backend required — fully local and free.
 """
 
@@ -85,23 +85,14 @@ def _save_last_seen(snapshot: dict):
 
 
 # ══════════════════════════════════════════════════════════════
-#  POLL & ALERT DETECTION
+#  POLL & ALERT DETECTION (UPGRADED CAPABILITY)
 # ══════════════════════════════════════════════════════════════
 
 def check_watchlist_updates(watchlist: list) -> list:
     """
-    For each watchlist item, quickly fetch current trial counts and recent
-    publications, then compare to ``last_seen.json``.
-
-    For **vaccine** items the search now uses ontology-expanded aliases via
-    ``fetch_vaccine_trials_by_aliases`` (OR-query) instead of the disease-only
-    ``fetch_all_vaccine_trials`` which previously returned 0 results for
-    vaccine names.
-
-    Returns a list of alert dicts:
-    ``{name, type, new_trials, new_pubs, pub_titles, timestamp}``
+    For each watchlist item, fetch current trials and publications.
+    Compares specific NCT IDs and Statuses to detect actual clinical milestones.
     """
-    # Import here to avoid circular imports
     from modules.trial_fetchers import (
         fetch_all_vaccine_trials,
         fetch_pipeline_publications,
@@ -124,7 +115,11 @@ def check_watchlist_updates(watchlist: list) -> list:
 
         key = name.lower()
         prev = last_seen.get(key, {})
-        prev_trial_count = prev.get("trial_count", 0)
+        
+        # Identify if this is the old basic counter format
+        is_legacy_snapshot = "trial_count" in prev and "trials" not in prev
+        
+        prev_trials_dict = prev.get("trials", {})
         prev_pub_ids = set(prev.get("pub_ids", []))
 
         # Fetch current data
@@ -132,7 +127,6 @@ def check_watchlist_updates(watchlist: list) -> list:
             if itype == "disease":
                 trials = fetch_all_vaccine_trials(name, max_pages=1)
             else:
-                # Vaccine: use ontology aliases → OR-query (fixed)
                 search_terms = _get_vaccine_search_terms(name)
                 if search_terms:
                     result = fetch_vaccine_trials_by_aliases(
@@ -149,7 +143,37 @@ def check_watchlist_updates(watchlist: list) -> list:
         except Exception:
             pubs = []
 
-        current_trial_count = len(trials)
+        # Process Current Trials
+        current_trials_dict = {}
+        new_trial_alerts = []
+        status_change_alerts = []
+        
+        for t in trials:
+            nct_id = t.get("NCT ID")
+            if not nct_id:
+                continue
+                
+            current_status = t.get("Status", "Unknown")
+            current_trials_dict[nct_id] = current_status
+            
+            # Only generate alerts if we have a valid recent snapshot (skip legacy transition)
+            if prev and not is_legacy_snapshot:
+                if nct_id not in prev_trials_dict:
+                    new_trial_alerts.append({
+                        "id": nct_id, 
+                        "title": t.get("Title", "Untitled"), 
+                        "status": current_status
+                    })
+                else:
+                    old_status = prev_trials_dict[nct_id]
+                    if old_status != current_status:
+                        status_change_alerts.append({
+                            "id": nct_id, 
+                            "old": old_status, 
+                            "new": current_status
+                        })
+
+        # Process Current Publications
         current_pub_ids = set()
         current_pub_titles = []
         for p in pubs:
@@ -158,22 +182,22 @@ def check_watchlist_updates(watchlist: list) -> list:
             if pid not in prev_pub_ids:
                 current_pub_titles.append(p.get("title", ""))
 
-        new_trials = max(0, current_trial_count - prev_trial_count) if prev_trial_count > 0 else 0
         new_pubs = len(current_pub_ids - prev_pub_ids) if prev_pub_ids else 0
 
-        # Save snapshot
+        # Save the new enriched snapshot
         new_snapshot[key] = {
-            "trial_count": current_trial_count,
+            "trials": current_trials_dict,
             "pub_ids": list(current_pub_ids),
             "checked": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
 
-        # Only alert if there's something new (and we have a previous baseline)
-        if (new_trials > 0 or new_pubs > 0) and prev:
+        # Only append to master alerts if there is actual news
+        if (new_trial_alerts or status_change_alerts or new_pubs > 0) and prev and not is_legacy_snapshot:
             alerts.append({
                 "name": name,
                 "type": itype,
-                "new_trials": new_trials,
+                "new_trials": new_trial_alerts,
+                "status_changes": status_change_alerts,
                 "new_pubs": new_pubs,
                 "pub_titles": current_pub_titles[:3],
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),

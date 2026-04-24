@@ -1,35 +1,45 @@
 {
   "arexvy": {
-    "trial_count": 31,
+    "trials": {
+      "NCT07220109": "RECRUITING",
+      "NCT04841577": "COMPLETED",
+      "NCT05559476": "COMPLETED",
+      "NCT05170399": "RECRUITING",
+      "NCT06534892": "ACTIVE_NOT_RECRUITING",
+      "NCT06593210": "RECRUITING",
+      "NCT05966090": "COMPLETED",
+      "NCT06614725": "COMPLETED",
+      "NCT07092865": "RECRUITING",
+      "NCT06843317": "RECRUITING",
+      "NCT04886596": "COMPLETED",
+      "NCT04090658": "COMPLETED",
+      "NCT06551181": "COMPLETED",
+      "NCT05879107": "COMPLETED",
+      "NCT07050732": "RECRUITING",
+      "NCT05568797": "COMPLETED",
+      "NCT04732871": "ACTIVE_NOT_RECRUITING",
+      "NCT05705440": "COMPLETED",
+      "NCT04657198": "COMPLETED",
+      "NCT05059301": "COMPLETED",
+      "NCT06194318": "COMPLETED",
+      "NCT05921903": "COMPLETED",
+      "NCT04138056": "COMPLETED",
+      "NCT05045144": "COMPLETED",
+      "NCT06597916": "RECRUITING",
+      "NCT05590403": "COMPLETED",
+      "NCT03814590": "COMPLETED",
+      "NCT06481579": "COMPLETED",
+      "NCT06374394": "COMPLETED",
+      "NCT06389487": "COMPLETED",
+      "NCT06556147": "ACTIVE_NOT_RECRUITING"
+    },
     "pub_ids": [
-      "https://pubmed.ncbi.nlm.nih.gov/39744803/",
       "https://pubmed.ncbi.nlm.nih.gov/41531504/",
       "https://pubmed.ncbi.nlm.nih.gov/40862314/",
       "https://pubmed.ncbi.nlm.nih.gov/41039710/",
-      "https://pubmed.ncbi.nlm.nih.gov/40901480/"
-    ],
-    "checked": "2026-04-22 11:41"
-  },
-  "comirnaty": {
-    "trial_count": 46,
-    "pub_ids": [
-      "https://pubmed.ncbi.nlm.nih.gov/41999674/",
-      "https://pubmed.ncbi.nlm.nih.gov/41848549/",
-      "https://pubmed.ncbi.nlm.nih.gov/41948336/",
-      "https://pubmed.ncbi.nlm.nih.gov/41655623/",
-      "https://pubmed.ncbi.nlm.nih.gov/41655468/"
-    ],
-    "checked": "2026-04-22 11:41"
-  },
-  "abrysvo": {
-    "trial_count": 20,
-    "pub_ids": [
       "https://pubmed.ncbi.nlm.nih.gov/39744803/",
-      "https://pubmed.ncbi.nlm.nih.gov/41104031/",
-      "https://pubmed.ncbi.nlm.nih.gov/40862314/",
-      "https://pubmed.ncbi.nlm.nih.gov/41039710/",
       "https://pubmed.ncbi.nlm.nih.gov/40901480/"
     ],
-    "checked": "2026-04-22 11:41"
+    "checked": "2026-04-24 10:54"
   }
 }

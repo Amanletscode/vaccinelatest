@@ -56,7 +56,7 @@ def _get_token_budget(prompt_type: str = "default") -> int:
 #  CORE GEMINI CALL
 # ════════════════════════════════════════════════════════════════
 
-def _call_gemini(messages, model=None, max_tokens=900, temperature=0.25):
+def _call_gemini(messages, model=None, max_tokens=900, temperature=0.25, response_mime_type="text/plain"):
     """Send a chat-style request to the Gemini REST API and return (text, error)."""
     api_key, err = _get_gemini_key()
     if not api_key:
@@ -90,7 +90,11 @@ def _call_gemini(messages, model=None, max_tokens=900, temperature=0.25):
 
     payload = {
         "contents": contents,
-        "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens},
+        "generationConfig": {
+            "temperature": temperature, 
+            "maxOutputTokens": max_tokens,
+            "responseMimeType": response_mime_type
+        },
     }
     if system_instruction:
         payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
@@ -448,10 +452,8 @@ def _infer_vaccine_aliases_llm(vaccine_name: str) -> list:
         "You are a pharmaceutical data extractor. Given a vaccine or drug name, "
         "return a JSON list of strings containing ALL known names for this product: "
         "the commercial brand name, generic/INN name, and all historical "
-        "investigational compound codes (e.g. PF-xxxxx, GSKxxxxxxx, BNTxxxxx, "
-        "mRNA-xxxx). Include only real, verifiable names. "
-        "Output ONLY a valid JSON list, nothing else. "
-        'Example for Arexvy: ["Arexvy", "GSK3844766A", "RSVPreF3"]'
+        "investigational compound codes. "
+        "Output ONLY a valid JSON list."
     )
     user_prompt = f"Vaccine/drug name: {vaccine_name}"
     response, err = _call_gemini(
@@ -459,24 +461,16 @@ def _infer_vaccine_aliases_llm(vaccine_name: str) -> list:
          {"role": "user", "content": user_prompt}],
         model="models/gemini-1.5-flash-latest",
         temperature=0.0,
+        response_mime_type="application/json"
     )
     if response:
         try:
-            text = response.strip()
-            # Strip markdown code fences if the model wraps output
-            if text.startswith("```"):
-                text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-                if text.endswith("```"):
-                    text = text[:-3]
-                text = text.strip()
-            aliases = json.loads(text)
+            aliases = json.loads(response.strip())
             if isinstance(aliases, list) and aliases:
-                # Guarantee the original name is included
                 result = [vaccine_name]
                 for a in aliases:
-                    if isinstance(a, str) and a.strip():
-                        if a.strip().lower() != vaccine_name.strip().lower():
-                            result.append(a.strip())
+                    if isinstance(a, str) and a.strip() and a.strip().lower() != vaccine_name.strip().lower():
+                        result.append(a.strip())
                 return result
         except (json.JSONDecodeError, ValueError):
             pass
@@ -498,11 +492,15 @@ def _compare_vaccines_llm(vaccine_a_name: str, vaccine_a_data: dict,
       - sample_nct_ids: list[str] — up to 10 representative NCT IDs
     """
 
-    system_prompt = """You are a senior vaccine competitive intelligence analyst.
-Produce a concise, factual comparison of two vaccine products using ONLY the
-pre-computed metrics and regulatory data provided. Do NOT invent numbers.
-Cite NCT IDs from the provided lists when making specific claims.
-Be balanced — highlight genuine strengths AND weaknesses on BOTH sides.
+    system_prompt = """You are a senior vaccine competitive intelligence analyst presenting to the Head of Analytics.
+Produce a concise, factual comparison of two vaccine products using ONLY the pre-computed metrics and regulatory data provided. 
+Do NOT invent numbers. You must explicitly cite NCT IDs from the provided lists when making specific claims.
+
+Your analysis must ruthlessly highlight the strategic delta between the two programs:
+- Who has the clinical maturity advantage (completed Phase 3 volume)?
+- Who has the active expansion advantage (highly recruiting trials)?
+- What is the time-to-market differential based on FDA data?
+
 Keep your response concise and complete — do NOT leave sections unfinished."""
 
     user_prompt = f"""Compare {vaccine_a_name} vs {vaccine_b_name}.
@@ -516,19 +514,19 @@ Keep your response concise and complete — do NOT leave sections unfinished."""
 Structure your response as:
 
 ## EXECUTIVE COMPARISON
-[3-4 sentences comparing the two vaccines at a high level]
+[3-4 sentences comparing clinical maturity, active pipeline expansion, and regulatory standing]
 
 ## KEY DIFFERENTIATORS
 ### {vaccine_a_name} Strengths
-[3-4 concise bullets, cite NCT IDs]
+[3-4 concise bullets focusing on trial phase distribution, recruitment velocity, or geographic reach. Cite NCT IDs.]
 ### {vaccine_b_name} Strengths
-[3-4 concise bullets, cite NCT IDs]
+[3-4 concise bullets focusing on trial phase distribution, recruitment velocity, or geographic reach. Cite NCT IDs.]
 
 ## REGULATORY STATUS
-[Compare regulatory standing using the FDA data provided. Note if data is missing.]
+[Compare approval dates and FAERS data if available. Note who holds the first-mover advantage.]
 
 ## STRATEGIC IMPLICATIONS
-[4-5 actionable bullets for a BD/strategy team]""" + ANTI_TRUNCATION_SUFFIX
+[4-5 actionable bullets regarding clinical catch-up strategies, post-marketing safety monitoring, or label expansion opportunities.]""" + ANTI_TRUNCATION_SUFFIX
 
     return _call_gemini(
         messages=[
