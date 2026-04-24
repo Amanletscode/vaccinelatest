@@ -312,21 +312,27 @@ def fetch_pipeline_publications(query: str, max_items: int = 5):
     """Fetch recent English-language PubMed articles + FDA press releases."""
     items = []
 
-    # PubMed: English-only, clinical-trial-biased, recent
+    # PubMed: High-Integrity Clinical/Safety Query
     try:
-        search_q = urllib.parse.quote(f"{query} vaccine clinical trial eng[la]")
+        # Strict boolean logic to eliminate noise and force clinical relevance
+        raw_query = f'"{query}"[Title/Abstract] AND ("clinical trial"[Publication Type] OR vaccine[Title/Abstract] OR safety[Title/Abstract]) AND English[Language]'
+        search_q = urllib.parse.quote(raw_query)
+        
+        # Sort by 'date' ensures the most recently indexed papers are shown
         search_url = (
             f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
             f"?db=pubmed&term={search_q}&retmode=json&retmax={max_items}"
-            f"&sort=pub_date&datetype=pdat&mindate=2024/01/01"
+            f"&sort=date" 
         )
         search_data = _request_json(search_url, timeout=10)
         pmids = search_data.get("esearchresult", {}).get("idlist", [])
+        
         if pmids:
             id_str = ",".join(pmids)
             summary_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={id_str}&retmode=json"
             summary_data = _request_json(summary_url, timeout=10)
             result = summary_data.get("result", {})
+            
             for pmid in pmids:
                 if pmid in result:
                     meta = result[pmid]
