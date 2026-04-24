@@ -1097,19 +1097,21 @@ with tab3:
             if h2h_a:
                 df_a = pd.DataFrame(h2h_a)
                 with trend_col1:
-                    st.markdown(f"**{h2h_name_a}**")
+                    st.markdown(f"*{h2h_name_a}*")
                     tl_a = create_trial_timeline(df_a)
                     if tl_a:
-                        st.plotly_chart(tl_a, use_container_width=True)
+                        # ADD THE KEY HERE 👇
+                        st.plotly_chart(tl_a, use_container_width=True, key="h2h_timeline_a")
                     else:
                         st.caption("No date data available.")
             if h2h_b:
                 df_b = pd.DataFrame(h2h_b)
                 with trend_col2:
-                    st.markdown(f"**{h2h_name_b}**")
+                    st.markdown(f"*{h2h_name_b}*")
                     tl_b = create_trial_timeline(df_b)
                     if tl_b:
-                        st.plotly_chart(tl_b, use_container_width=True)
+                        # ADD THE KEY HERE 👇
+                        st.plotly_chart(tl_b, use_container_width=True, key="h2h_timeline_b")
                     else:
                         st.caption("No date data available.")
 
