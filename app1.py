@@ -77,6 +77,10 @@ from modules.alerts import (
 
 load_dotenv()
 
+@st.cache_data
+def convert_df_to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
 # ══════════════════════════════════════════════════════════════
 #  APP CONFIG
 # ══════════════════════════════════════════════════════════════
@@ -453,6 +457,16 @@ with tab1:
         _render_publications(disease)
         show_interactive_df(df_filtered, key="disease_tab", height=420)
 
+        # Download CSV
+        csv_data = convert_df_to_csv(df_filtered)
+        st.download_button(
+            label="📥 Download Disease Data as CSV",
+            data=csv_data,
+            file_name=f"disease_data_{disease.replace(' ', '_')}.csv",
+            mime="text/csv",
+            key="download_disease_data"
+        )
+
         if st.button("🧠 Summarize Displayed Trials", key="summarize_disease_trials"):
             with st.spinner("Generating AI executive summary..."):
                 summary_txt, summary_err = _summarize_trials_with_llm(
@@ -747,6 +761,16 @@ with tab2:
 
         show_interactive_df(df_vaccine_filtered, key="vaccine_tab", height=320)
 
+        # Download CSV
+        csv_data = convert_df_to_csv(df_vaccine_filtered)
+        st.download_button(
+            label="📥 Download Vaccine Data as CSV",
+            data=csv_data,
+            file_name=f"vaccine_data_{target_vaccine.replace(' ', '_')}.csv",
+            mime="text/csv",
+            key="download_vaccine_data"
+        )
+
         # Unified Gemini intelligence
         if st.button("🧠 Unified Vaccine Intelligence (Gemini)", key="vaccine_intel"):
             with st.spinner("Generating unified Gemini intelligence brief..."):
@@ -808,6 +832,20 @@ with tab2:
 
         st.info(f"📊 Showing {len(df_competitor_filtered)} of {len(competitor_trials)} competitor trials")
 
+        # --- EXECUTIVE KPI BANNER ---
+        st.markdown("#### 🚨 Strategic Threat Snapshot")
+        kpi1, kpi2, kpi3 = st.columns(3)
+        
+        # Calculate instant insights
+        p3_threats = df_competitor_filtered[df_competitor_filtered["Phase"].astype(str).str.contains("3", case=False, na=False)]
+        active_threats = df_competitor_filtered[df_competitor_filtered["Status"].astype(str).str.contains("Recruiting|Active", case=False, na=False)]
+        
+        kpi1.metric("Total Competitor Programs", len(df_competitor_filtered))
+        kpi2.metric("Late-Stage Threats (Phase 3)", len(p3_threats))
+        kpi3.metric("Actively Recruiting", len(active_threats))
+        st.markdown("<br>", unsafe_allow_html=True) # little spacing
+        # ----------------------------
+
         col_c1, col_c2, col_c3 = st.columns(3)
         with col_c1:
             comp_phase = create_phase_chart(df_competitor_filtered)
@@ -823,6 +861,16 @@ with tab2:
                 st.plotly_chart(comp_heatmap, use_container_width=True)
 
         show_interactive_df(df_competitor_filtered, key="competitor_tab", height=420)
+
+        # Download CSV
+        csv_data = convert_df_to_csv(df_competitor_filtered)
+        st.download_button(
+            label="📥 Download Competitor Data as CSV",
+            data=csv_data,
+            file_name=f"competitor_data_{', '.join(target_diseases) if target_diseases else 'Unknown'}.csv",
+            mime="text/csv",
+            key="download_competitor_data"
+        )
 
         if st.button("🧠 Summarize Competitor Trials", key="summarize_comp_trials"):
             with st.spinner("Creating AI competitor synopsis..."):
@@ -1095,5 +1143,14 @@ with tab3:
 #  FOOTER
 # ══════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════
+#  FOOTER & DATA PROVENANCE
+# ══════════════════════════════════════════════════════════════
 st.markdown("---")
-st.caption("💡 Vaccine Pipeline Platform | Data from ClinicalTrials.gov | Developed by Aman & Smriti")
+foot_col1, foot_col2 = st.columns([3, 1])
+with foot_col1:
+    st.caption("💡 **Vaccine Pipeline Platform** | Developed by Aman & Smriti")
+    st.caption("🔄 **Live Data Integration:** ClinicalTrials.gov API v2 | PubMed E-Utilities | openFDA")
+with foot_col2:
+    st.caption(f"📅 **Session Data Timestamp:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} IST")
+    st.caption("🛡️ **IQVIA Internal Innovation Demo**")
