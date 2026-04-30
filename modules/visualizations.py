@@ -8,6 +8,19 @@ Figure (or None if plotly is not installed / data is empty).
 import re
 import pandas as pd
 
+# ══════════════════════════════════════════════════════════════
+#  IQVIA CORPORATE COLOR PALETTE (From Brand Guidelines)
+# ══════════════════════════════════════════════════════════════
+IQVIA_PALETTE = [
+    "#002C5F",  # Indigo / Dark Blue (Primary)
+    "#009DA9",  # Bright Teal
+    "#00A5E3",  # Bright Blue
+    "#8CC63F",  # Bright Green
+    "#53565A",  # Charcoal / Dark Grey
+    "#DA291C",  # Red
+    "#00685E"   # Emerald
+]
+
 
 # ══════════════════════════════════════════════════════════════
 #  CORE CHARTS
@@ -25,24 +38,37 @@ def create_phase_chart(df: pd.DataFrame):
         if not phase_counts:
             return None
         phase_df = pd.DataFrame(list(phase_counts.items()), columns=["Phase", "Count"])
-        fig = px.bar(phase_df, x="Phase", y="Count", title="Phase Distribution",
-                     color="Count", color_continuous_scale="Blues")
-        fig.update_layout(showlegend=False, height=300)
+        
+        phase_order = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Not reported"]
+        
+        fig = px.bar(
+            phase_df, x="Phase", y="Count", title="Phase Distribution",
+            color="Phase", text_auto=True, 
+            category_orders={"Phase": phase_order},
+            color_discrete_sequence=IQVIA_PALETTE
+        )
+        fig.update_layout(showlegend=False, height=300, plot_bgcolor="rgba(0,0,0,0)")
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
         return fig
     except ImportError:
         return None
 
 
 def create_status_chart(df: pd.DataFrame):
-    """Pie chart of trial status distribution."""
+    """Donut chart of trial status distribution."""
     try:
         import plotly.express as px
         status_counts = df["Status"].value_counts()
         if status_counts.empty:
             return None
-        fig = px.pie(values=status_counts.values, names=status_counts.index,
-                     title="Trial Status Distribution")
-        fig.update_layout(height=300)
+        
+        fig = px.pie(
+            values=status_counts.values, names=status_counts.index,
+            title="Trial Status Distribution", hole=0.4,
+            color_discrete_sequence=IQVIA_PALETTE
+        )
+        fig.update_traces(textposition='inside', textinfo='percent+label')
+        fig.update_layout(height=300, showlegend=False)
         return fig
     except ImportError:
         return None
@@ -59,9 +85,12 @@ def create_sponsor_chart(df: pd.DataFrame, top_n=10):
             x=sponsor_counts.values, y=sponsor_counts.index,
             orientation="h", title=f"Top {top_n} Sponsors",
             labels={"x": "Number of Trials", "y": "Sponsor"},
+            text_auto=True,
+            color_discrete_sequence=["#002C5F"]  # IQVIA Indigo
         )
-        fig.update_layout(height=400)
-        fig.update_xaxes(dtick=1, rangemode="tozero")
+        fig.update_layout(height=400, plot_bgcolor="rgba(0,0,0,0)")
+        fig.update_xaxes(dtick=1, rangemode="tozero", showgrid=True, gridwidth=1, gridcolor='LightGray')
+        fig.update_yaxes(categoryorder="total ascending") 
         return fig
     except ImportError:
         return None
@@ -84,12 +113,16 @@ def create_country_heatmap(df: pd.DataFrame):
         if not country_counts:
             return None
         map_df = pd.DataFrame(list(country_counts.items()), columns=["Country", "Sites"])
+        
+        # Custom gradient using IQVIA colors: Light Blue -> Teal -> Indigo
+        iqvia_gradient = ["#E0F4FC", "#009DA9", "#002C5F"]
+        
         fig = px.choropleth(
             map_df, locations="Country", locationmode="country names",
             color="Sites", hover_name="Country",
-            color_continuous_scale="Reds", title="Global Trial Footprint",
+            color_continuous_scale=iqvia_gradient, title="Global Trial Footprint",
         )
-        fig.update_layout(height=400, margin={"r": 0, "t": 40, "l": 0, "b": 0})
+        fig.update_layout(height=400, margin={"r": 0, "t": 40, "l": 0, "b": 0}, geo=dict(showframe=False, showcoastlines=True))
         return fig
     except ImportError:
         return None
@@ -123,14 +156,19 @@ def create_trial_timeline(df: pd.DataFrame):
             return None
         timeline_df = pd.DataFrame(rows)
         agg = timeline_df.groupby(["Year", "Phase"]).size().reset_index(name="Trials")
+        
+        phase_order = ["Phase 1", "Phase 2", "Phase 3", "Phase 4", "Not reported"]
+
         fig = px.bar(
             agg, x="Year", y="Trials", color="Phase",
             title="Trial Starts by Year & Phase",
-            barmode="group",
-            color_discrete_sequence=px.colors.qualitative.Set2,
+            barmode="group", text_auto=True,
+            category_orders={"Phase": phase_order},
+            color_discrete_sequence=IQVIA_PALETTE,
         )
-        fig.update_layout(height=350, xaxis_dtick=1)
-        fig.update_xaxes(type="category")
+        fig.update_layout(height=350, xaxis_dtick=1, plot_bgcolor="rgba(0,0,0,0)")
+        fig.update_xaxes(type="category", categoryorder='category ascending')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
         return fig
     except ImportError:
         return None
@@ -154,10 +192,11 @@ def create_status_trend(df: pd.DataFrame):
         fig = px.area(
             agg, x="Year", y="Trials", color="Status",
             title="Trial Activity Over Time (by Status)",
-            color_discrete_sequence=px.colors.qualitative.Pastel,
+            color_discrete_sequence=IQVIA_PALETTE,
         )
-        fig.update_layout(height=350, xaxis_dtick=1)
-        fig.update_xaxes(type="category")
+        fig.update_layout(height=350, xaxis_dtick=1, plot_bgcolor="rgba(0,0,0,0)")
+        fig.update_xaxes(type="category", categoryorder='category ascending')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
         return fig
     except ImportError:
         return None
@@ -181,26 +220,23 @@ def create_completion_timeline(df: pd.DataFrame):
         agg.columns = ["Year", "Completed Trials"]
         fig = px.bar(
             agg, x="Year", y="Completed Trials",
-            title="Trial Completions by Year",
-            color_discrete_sequence=["#2ca02c"],
+            title="Trial Completions by Year", text_auto=True,
+            color_discrete_sequence=["#009DA9"], # IQVIA Bright Teal
         )
-        fig.update_layout(height=300, xaxis_dtick=1)
-        fig.update_xaxes(type="category")
+        fig.update_layout(height=300, xaxis_dtick=1, plot_bgcolor="rgba(0,0,0,0)")
+        fig.update_xaxes(type="category", categoryorder='category ascending')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
         return fig
     except ImportError:
         return None
 
 
 # ══════════════════════════════════════════════════════════════
-#  HEAD-TO-HEAD COMPARISON (simplified, no heuristic scores)
+#  HEAD-TO-HEAD COMPARISON
 # ══════════════════════════════════════════════════════════════
 
 def compute_comparison_metrics(trials: list, label: str, known_manufacturer: str = None):
-    """Compute key metrics for a set of trials belonging to one vaccine.
-    
-    ``known_manufacturer`` (optional) is used to count how many trials are
-    sponsored by the originator vs external parties.
-    """
+    """Compute key metrics for a set of trials belonging to one vaccine."""
     total = len(trials)
     if total == 0:
         return {
@@ -276,15 +312,17 @@ def create_comparison_bar(metrics_a: dict, metrics_b: dict):
             metrics_b["country_count"],
         ]
 
+        # Using IQVIA Indigo vs IQVIA Teal for sharp, professional contrast
         fig = go.Figure(data=[
-            go.Bar(name=metrics_a["label"], x=categories, y=vals_a, marker_color="#636EFA"),
-            go.Bar(name=metrics_b["label"], x=categories, y=vals_b, marker_color="#EF553B"),
+            go.Bar(name=metrics_a["label"], x=categories, y=vals_a, marker_color="#002C5F", text=vals_a, textposition='auto'),
+            go.Bar(name=metrics_b["label"], x=categories, y=vals_b, marker_color="#009DA9", text=vals_b, textposition='auto'),
         ])
         fig.update_layout(
             barmode="group", height=350,
             title="Side-by-Side Comparison",
-            yaxis_title="Count",
+            yaxis_title="Count", plot_bgcolor="rgba(0,0,0,0)"
         )
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='LightGray')
         return fig
     except ImportError:
         return None
