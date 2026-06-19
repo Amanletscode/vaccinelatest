@@ -91,7 +91,7 @@ def _call_gemini(messages, model=None, max_tokens=900, temperature=0.25, respons
     payload = {
         "contents": contents,
         "generationConfig": {
-            "temperature": temperature, 
+            "temperature": temperature,
             "maxOutputTokens": max_tokens,
             "responseMimeType": response_mime_type
         },
@@ -536,3 +536,208 @@ Structure your response as:
         max_tokens=_get_token_budget("comparison"),
         temperature=0.3,
     )
+
+
+# ════════════════════════════════════════════════════════════════
+#  PATIENT BURDEN SCORING  (NEW — was missing)
+# ════════════════════════════════════════════════════════════════
+
+def _score_patient_burden(nct_id: str, eligibility_criteria: str):
+    """Use Gemini to score how burdensome a trial's eligibility criteria are
+    for patient recruitment on a 1-10 scale, broken into three dimensions.
+
+    Returns ``(score_dict, error_str)`` where ``score_dict`` has keys:
+
+    - ``Overall_Burden_Score``  (int 1-10)
+    - ``Primary_Bottleneck``    (str)
+    - ``Dimensional_Analysis``  (dict with Demographic_Constraints,
+      Comorbidity_Exclusions, Procedural_Complexity — each a dict
+      with ``Level`` and ``Reason``)
+    - ``Evidence_Quote``        (str — a verbatim snippet from the criteria)
+    """
+    if not eligibility_criteria or not eligibility_criteria.strip():
+        return None, "No eligibility criteria text provided."
+
+    # Truncate extremely long criteria to stay within token budgets
+    criteria_snippet = eligibility_criteria[:6000]
+
+    system_prompt = """You are a clinical operations feasibility analyst specializing in patient recruitment modeling.
+
+Your task is to read a clinical trial's eligibility criteria and produce a structured JSON
+assessment of how difficult it will be to recruit patients.  You score on three independent
+dimensions, then produce an overall burden score.
+
+Scoring guidelines:
+- **Demographic Constraints**: How narrow is the age range? Are gender restrictions unusual?
+  Does it exclude pregnant/breastfeeding women without justification?
+- **Comorbidity Exclusions**: How many exclusion criteria rule out common comorbidities
+  (diabetes, hypertension, obesity, autoimmune disease, prior cancers, etc.)?
+- **Procedural Complexity**: How many visits, invasive procedures, washout periods,
+  biopsies, lumbar punctures, prolonged inpatient stays are required?
+
+Output ONLY a valid JSON object with exactly this structure (no markdown fences, no commentary):
+{
+  "Overall_Burden_Score": <integer 1-10>,
+  "Primary_Bottleneck": "<short label>",
+  "Dimensional_Analysis": {
+    "Demographic_Constraints": { "Level": "Low|Medium|High|Severe", "Reason": "<1 sentence>" },
+    "Comorbidity_Exclusions": { "Level": "Low|Medium|High|Severe", "Reason": "<1 sentence>" },
+    "Procedural_Complexity":   { "Level": "Low|Medium|High|Severe", "Reason": "<1 sentence>" }
+  },
+  "Evidence_Quote": "<verbatim snippet from the criteria, max 200 chars>"
+}"""
+
+    user_prompt = f"""Trial NCT ID: {nct_id}
+
+Eligibility Criteria:
+---
+{criteria_snippet}
+---
+
+Return ONLY the JSON object described in the system instructions.  No markdown fences."""
+
+    raw, err = _call_gemini(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=_get_token_budget("default"),
+        temperature=0.15,           # low temperature for structured extraction
+        response_mime_type="application/json",
+    )
+
+    if err:
+        return None, err
+    if not raw:
+        return None, "Empty response from Gemini for patient burden scoring."
+
+    # ── Robust JSON parsing ──
+    try:
+        # Try direct parse first
+        score_data = json.loads(raw.strip())
+    except json.JSONDecodeError:
+        # Sometimes Gemini wraps JSON in markdown fences despite instructions
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:].strip()
+        try:
+            score_data = json.loads(cleaned)
+        except json.JSONDecodeError:
+            return None, f"Failed to parse Gemini response as JSON: {raw[:200]}..."
+
+    # ── Validate required keys ──
+    required_top = {"Overall_Burden_Score", "Primary_Bottleneck", "Dimensional_Analysis", "Evidence_Quote"}
+    missing = required_top - set(score_data.keys())
+    if missing:
+        return None, f"Gemini response missing required keys: {missing}"
+
+    dims = score_data.get("Dimensional_Analysis", {})
+    required_dims = {"Demographic_Constraints", "Comorbidity_Exclusions", "Procedural_Complexity"}
+    missing_dims = required_dims - set(dims.keys())
+    if missing_dims:
+        return None, f"Gemini response missing dimensional keys: {missing_dims}"
+
+    # Ensure Overall_Burden_Score is an int
+    try:
+        score_data["Overall_Burden_Score"] = int(score_data["Overall_Burden_Score"])
+    except (ValueError, TypeError):
+        return None, "Overall_Burden_Score is not a valid integer."
+
+    return score_data, None
+
+
+# ════════════════════════════════════════════════════════════════
+#  US SITE FEASIBILITY / WHITESPACE ANALYSIS  (NEW — was missing)
+# ════════════════════════════════════════════════════════════════
+
+def _analyze_us_site_feasibility(disease_name: str, feasibility_data: dict):
+    """Use Gemini to interpret US site-saturation data and recommend low-competition
+    whitespace cities + high-risk congested hospitals.
+
+    ``feasibility_data`` is the dict returned by ``calculate_us_site_saturation``.
+
+    Returns ``(analysis_dict, error_str)`` where ``analysis_dict`` has keys:
+
+    - ``Executive_Verdict``              (str)
+    - ``High_Risk_Hospitals``            (list[str])
+    - ``Strategic_City_Whitespaces``     (list[str])
+    - ``Operational_Recommendation``     (str)
+    """
+    if not feasibility_data or "error" in feasibility_data:
+        return None, feasibility_data.get("error", "No feasibility data provided.")
+
+    system_prompt = """You are a clinical trial site-feasibility strategist at a top-5 CRO.
+You receive structured JSON describing US city-level trial saturation and congested hospitals
+for a specific disease area.
+
+Your job is to produce a concise, actionable JSON report that:
+1. States an executive verdict on US site feasibility (one of: "Highly Favorable", "Moderate Competition", or "Severe Congestion").
+2. Lists up to 5 high-risk hospitals where site fatigue is likely (from the Most_Congested_Hospitals map).
+3. Lists up to 5 strategic whitespace cities where proven infrastructure exists but competition is low
+   (from Low_Competition_Emerging_Hubs).  If there are fewer than 5, list all of them.
+4. Provides a 2-3 sentence operational recommendation for a sponsor deciding where to place sites.
+
+Output ONLY a valid JSON object with exactly this structure (no markdown fences, no commentary):
+{
+  "Executive_Verdict": "<Highly Favorable|Moderate Competition|Severe Congestion>",
+  "High_Risk_Hospitals": ["Hospital A", "Hospital B"],
+  "Strategic_City_Whitespaces": ["City X", "City Y"],
+  "Operational_Recommendation": "<2-3 sentence recommendation>"
+}"""
+
+    user_prompt = f"""Disease/Indication: {disease_name}
+
+US Site Saturation Data:
+{json.dumps(feasibility_data, indent=2, default=str)}
+
+Return ONLY the JSON object described in the system instructions.  No markdown fences."""
+
+    raw, err = _call_gemini(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        max_tokens=_get_token_budget("default"),
+        temperature=0.2,
+        response_mime_type="application/json",
+    )
+
+    if err:
+        return None, err
+    if not raw:
+        return None, "Empty response from Gemini for site feasibility analysis."
+
+    # ── Robust JSON parsing ──
+    try:
+        analysis = json.loads(raw.strip())
+    except json.JSONDecodeError:
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            if cleaned.endswith("```"):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:].strip()
+        try:
+            analysis = json.loads(cleaned)
+        except json.JSONDecodeError:
+            return None, f"Failed to parse Gemini response as JSON: {raw[:200]}..."
+
+    # ── Validate required keys ──
+    required = {"Executive_Verdict", "High_Risk_Hospitals", "Strategic_City_Whitespaces", "Operational_Recommendation"}
+    missing = required - set(analysis.keys())
+    if missing:
+        return None, f"Gemini response missing required keys: {missing}"
+
+    # Ensure list fields are actually lists
+    for list_key in ("High_Risk_Hospitals", "Strategic_City_Whitespaces"):
+        if not isinstance(analysis.get(list_key), list):
+            analysis[list_key] = [str(analysis[list_key])] if analysis.get(list_key) else []
+
+    return analysis, None
