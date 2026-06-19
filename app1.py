@@ -24,7 +24,7 @@ from modules.config import (
     GEMINI_MODEL_OPTIONS,
     LEARNED_MFR_FILE,
 )
-from modules.utils import _norm_txt, _request_json
+from modules.utils import _norm_txt, _request_json, calculate_trial_risk_index, calculate_us_site_saturation
 from modules.data_extraction import (
     _extract_locations,
     _check_for_publications,
@@ -45,6 +45,8 @@ from modules.llm_helpers import (
     _vaccine_intel_summary,
     _infer_manufacturer_llm,
     _compare_vaccines_llm,
+    _score_patient_burden,
+    _analyze_us_site_feasibility,
 )
 from modules.trial_fetchers import (
     fetch_all_vaccine_trials,
@@ -77,6 +79,42 @@ from modules.alerts import (
 
 load_dotenv()
 
+import base64
+import streamlit as st
+ 
+# # 1. ALWAYS set page config first in Streamlit
+# st.set_page_config(page_title="My Clinical Dashboard", layout="wide")
+ 
+# def add_professional_background(image_path):
+#     """Injects a background image with a professional frosted overlay."""
+#     try:
+#         with open(image_path, "rb") as img_file:
+#             encoded_string = base64.b64encode(img_file.read()).decode()
+            
+#         css = f"""
+#         <style>
+#         .stApp {{
+#             background-image: url(data:image/png;base64,{encoded_string});
+#             background-size: cover;
+#             background-position: center;
+#             background-attachment: fixed;
+#         }}
+#         /* This creates a frosted white overlay so your charts and text stay 100% readable */
+#         .stApp::before {{
+#             content: "";
+#             position: absolute;
+#             top: 0; left: 0; width: 100%; height: 100%;
+#             background-color: rgba(255, 255, 255, 0.50); /* Adjust this 0.90 to change the frost level */
+#             z-index: -1;
+#         }}
+#         </style>
+#         """
+#         st.markdown(css, unsafe_allow_html=True)
+#     except Exception as e:
+#         print(f"Error loading background: {e}")
+ 
+
+
 @st.cache_data
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
@@ -95,6 +133,8 @@ def format_fda_date(raw_date_str):
 # ══════════════════════════════════════════════════════════════
 
 st.set_page_config(page_title="Vaccine Pipeline Platform", page_icon="💉", layout="wide")
+
+# add_professional_background("clinical_bg.jpeg")
 
 # Legacy dataframe serializer (optional, ignored if not supported)
 try:
@@ -229,7 +269,7 @@ def _render_trial_details(details, prefix_key: str):
 
     if details.get("Locations"):
         with st.expander("🌍 Study Locations"):
-            for loc in details["Locations"][:10]:
+            for loc in details["Locations"]:
                 loc_str = f"{loc.get('name', '')}"
                 if loc.get("city"):
                     loc_str += f", {loc.get('city')}"
@@ -252,7 +292,7 @@ def _render_trial_details(details, prefix_key: str):
             if elig.get("criteria"):
                 st.markdown("**Criteria:**")
                 criteria_text = elig.get("criteria", "")
-                st.text(criteria_text[:500] + "..." if len(criteria_text) > 500 else criteria_text)
+                st.markdown(criteria_text)
 
     if details.get("Collaborators"):
         st.markdown("**🤝 Collaborators:**")
@@ -296,7 +336,35 @@ def _render_trial_details(details, prefix_key: str):
                 )
         elif detail_err:
             st.warning(detail_err)
+    
 
+    # --- INJECT PATIENT BURDEN AI ---
+    if details.get("Eligibility") and details["Eligibility"].get("criteria"):
+        if st.button("🧬 Analyze Recruitment Viability (AI)", key=f"burden_{prefix_key}_{nct_id}"):
+            with st.spinner("Calculating AI Patient Burden Score..."):
+                score_data, err = _score_patient_burden(nct_id, details["Eligibility"]["criteria"])
+            if score_data:
+                st.markdown("#### 🧬 Patient Recruitment Burden Analysis")
+                cols = st.columns(2)
+                cols[0].metric("Overall Burden Score (1-10)", f"{score_data.get('Overall_Burden_Score', 'N/A')}/10")
+                cols[1].info(f"**Primary Bottleneck:** {score_data.get('Primary_Bottleneck', 'N/A')}")
+                
+                st.markdown("**Dimensional Analysis:**")
+                dims = score_data.get("Dimensional_Analysis", {})
+                
+                # Safely extract nested dictionaries
+                demo = dims.get('Demographic_Constraints', {})
+                comorb = dims.get('Comorbidity_Exclusions', {})
+                proc = dims.get('Procedural_Complexity', {})
+                
+                st.write(f"- **Demographic Constraints [{demo.get('Level', 'N/A')}]:** {demo.get('Reason', 'No reason provided.')}")
+                st.write(f"- **Comorbidity Exclusions [{comorb.get('Level', 'N/A')}]:** {comorb.get('Reason', 'No reason provided.')}")
+                st.write(f"- **Procedural Complexity [{proc.get('Level', 'N/A')}]:** {proc.get('Reason', 'No reason provided.')}")
+                
+                st.error(f"**Evidence Quote:** *\"{score_data.get('Evidence_Quote', 'N/A')}\"*")
+            elif err:
+                st.warning(err)
+    # --------------------------------
 
 def _render_publications(query: str):
     """Render the publications / FDA news expandable panel."""
@@ -402,7 +470,7 @@ with tab1:
         if trigger_d:
             st.info(f"✅ Auto-searching '{disease}' from Watchlist. Please ensure you are viewing the 'Search by Disease' tab to see results.")
         with st.spinner("Fetching all vaccine trials (this may take a moment)..."):
-            studies = fetch_all_vaccine_trials(disease, max_pages=10)
+            studies = fetch_all_vaccine_trials(disease, max_pages=20)
             if not studies:
                 st.warning(f"No vaccine studies found for '{disease}'. Try another disease or broader term.")
                 st.session_state["studies"] = []
@@ -414,6 +482,15 @@ with tab1:
 
     if studies:
         df = pd.DataFrame(studies)
+
+        # --- INJECT RISK ENGINE ---
+        if "Completion Date" in df.columns and "Status" in df.columns:
+            df["Risk Flag"] = df.apply(lambda row: calculate_trial_risk_index(
+                str(row.get("Status", "")), 
+                str(row.get("Completion Date", ""))
+            )["flag"], axis=1)
+        # --------------------------
+
 
         # Sidebar filters
         st.sidebar.header("🎛️ Filters (Disease Search)")
@@ -443,6 +520,22 @@ with tab1:
             heatmap = create_country_heatmap(df_filtered)
             if heatmap:
                 st.plotly_chart(heatmap, use_container_width=True)
+
+        # --- INJECT US MICRO-LEVEL SITE AI ---
+        if st.button("🏥 Analyze US Hospital & City Congestion", key="whitespace_disease"):
+            with st.spinner("Calculating US facility bottlenecks & AI recommendations..."):
+                feasibility_data = calculate_us_site_saturation(df_filtered.to_dict('records'))
+                analysis, err = _analyze_us_site_feasibility(disease, feasibility_data)
+                
+                if analysis:
+                    st.markdown("#### 🏥 US Site Feasibility & Whitespace Analysis")
+                    st.info(f"**Executive Verdict:** {analysis.get('Executive_Verdict', 'N/A')}")
+                    st.error(f"**⚠️ High Risk Hospitals (Site Fatigue):** {', '.join(analysis.get('High_Risk_Hospitals', []))}")
+                    st.success(f"**🟢 Strategic Whitespace Cities:** {', '.join(analysis.get('Strategic_City_Whitespaces', []))}")
+                    st.markdown(f"**Operational Recommendation:** {analysis.get('Operational_Recommendation', 'N/A')}")
+                elif err:
+                    st.warning(err)
+        # ---------------------------------------
 
         # ── Trend Analysis ──
         with st.expander("📈 Trend Analysis", expanded=False):
@@ -592,7 +685,7 @@ with tab2:
                     with st.spinner(f"Step 2/2: Finding competitor vaccines for {', '.join(top_diseases)}..."):
                         seen = set()
                         for d in top_diseases:
-                            trials = fetch_all_vaccine_trials(d, max_pages=5)
+                            trials = fetch_all_vaccine_trials(d, max_pages=20)
                             for t in trials:
                                 vacc_norm = _norm_txt(t.get("Vaccines", ""))
                                 if any(tn and (tn in vacc_norm) for tn in target_norms):
@@ -631,6 +724,14 @@ with tab2:
             st.caption(" | ".join(meta_bits))
 
         df_vaccine = pd.DataFrame(vaccine_trials)
+
+        # --- INJECT RISK ENGINE ---
+        if "Completion Date" in df.columns and "Status" in df.columns:
+            df["Risk Flag"] = df.apply(lambda row: calculate_trial_risk_index(
+                str(row.get("Status", "")), 
+                str(row.get("Completion Date", ""))
+            )["flag"], axis=1)
+        # --------------------------
 
         # Classify sponsor type relative to originator
         mfr = _get_vaccine_manufacturer(target_vaccine)
@@ -831,6 +932,13 @@ with tab2:
 
         df_competitor = pd.DataFrame(competitor_trials)
 
+        # --- INJECT RISK ENGINE ---
+        if "Completion Date" in df_competitor.columns and "Status" in df_competitor.columns:
+            df_competitor["Risk Flag"] = df_competitor.apply(lambda row: calculate_trial_risk_index(
+                str(row.get("Status", "")), 
+                str(row.get("Completion Date", ""))
+            )["flag"], axis=1)
+
         st.sidebar.header("🎛️ Competitor Filters")
         phase_options_c = sorted({p.strip() for val in df_competitor["Phase"].dropna() for p in str(val).split(",")})
         status_options_c = sorted([s for s in df_competitor["Status"].dropna().unique()])
@@ -871,6 +979,29 @@ with tab2:
             comp_heatmap = create_country_heatmap(df_competitor_filtered)
             if comp_heatmap:
                 st.plotly_chart(comp_heatmap, use_container_width=True)
+
+    # --- INJECT US MICRO-LEVEL SITE AI (COMPETITORS) ---
+        if st.button("🏥 Analyze US Hospital & City Congestion", key="whitespace_comp"):
+            with st.spinner("Calculating US facility bottlenecks & AI recommendations..."):
+                feasibility_data = calculate_us_site_saturation(df_competitor_filtered.to_dict('records'))
+                analysis, err = _analyze_us_site_feasibility(target_diseases[0] if target_diseases else "Unknown", feasibility_data)
+                
+                if analysis:
+                    st.markdown("#### 🏥 Competitor US Site Feasibility Analysis")
+                    st.info(f"**Executive Verdict:** {analysis.get('Executive_Verdict', 'N/A')}")
+                    
+                    st.error("**⚠️ High Risk Hospitals (Competitor Fatigue):**")
+                    for hosp in analysis.get('High_Risk_Hospitals', []):
+                        st.write(f"- {hosp}")
+                        
+                    st.success("**🟢 Strategic Whitespace Cities (Untouched by Competitors):**")
+                    for city in analysis.get('Strategic_City_Whitespaces', []):
+                        st.write(f"- {city}")
+                        
+                    st.markdown(f"**Operational Recommendation:** {analysis.get('Operational_Recommendation', 'N/A')}")
+                elif err:
+                    st.warning(err)
+        # ---------------------------------------
 
         show_interactive_df(df_competitor_filtered, key="competitor_tab", height=420)
 
