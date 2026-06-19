@@ -726,8 +726,8 @@ with tab2:
         df_vaccine = pd.DataFrame(vaccine_trials)
 
         # --- INJECT RISK ENGINE ---
-        if "Completion Date" in df.columns and "Status" in df.columns:
-            df["Risk Flag"] = df.apply(lambda row: calculate_trial_risk_index(
+        if "Completion Date" in df_vaccine.columns and "Status" in df_vaccine.columns:
+            df_vaccine["Risk Flag"] = df_vaccine.apply(lambda row: calculate_trial_risk_index(
                 str(row.get("Status", "")), 
                 str(row.get("Completion Date", ""))
             )["flag"], axis=1)

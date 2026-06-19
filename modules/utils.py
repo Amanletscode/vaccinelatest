@@ -44,23 +44,25 @@ def _supports_width_string() -> bool:
         return Version(st.__version__) >= Version("1.39.0")
     except Exception:
         return False
-    
+
 
 from datetime import datetime
-import re
+
 
 def calculate_trial_risk_index(status: str, expected_completion: str) -> dict:
     """
     Enterprise-grade delay calculator handling messy CT.gov date formats.
     Returns a risk dictionary with a severity flag and mathematical delay.
     """
-    if not isinstance(status, str): status = "Unknown"
-    if not isinstance(expected_completion, str): expected_completion = ""
-    
+    if not isinstance(status, str):
+        status = "Unknown"
+    if not isinstance(expected_completion, str):
+        expected_completion = ""
+
     # If it's already done or terminated, no active delay risk
     if status.lower() in ['completed', 'terminated', 'withdrawn', 'suspended', 'unknown status']:
         return {"risk_level": "Low", "flag": "⚪ Inactive/Resolved", "months_delayed": 0}
-        
+
     if not expected_completion or expected_completion in ["Not reported", "N/A"]:
         return {"risk_level": "Unknown", "flag": "⚪ No Date Set", "months_delayed": 0}
 
@@ -77,7 +79,7 @@ def calculate_trial_risk_index(status: str, expected_completion: str) -> dict:
             target_date = datetime.strptime(expected_clean, "%Y-%m")
         else:
             return {"risk_level": "Unknown", "flag": "⚪ Parse Error", "months_delayed": 0}
-            
+
         current_date = datetime.now()
         delta_days = (current_date - target_date).days
         months_delayed = delta_days / 30.44
@@ -90,10 +92,10 @@ def calculate_trial_risk_index(status: str, expected_completion: str) -> dict:
             return {"risk_level": "Moderate", "flag": "🟠 Slipping Timeline", "months_delayed": round(months_delayed, 1)}
         else:
             return {"risk_level": "Low", "flag": "🟢 On Track", "months_delayed": 0}
-            
+
     except Exception:
         return {"risk_level": "Unknown", "flag": "⚪ Parse Error", "months_delayed": 0}
-    
+
 
 def calculate_us_site_saturation(trials: list) -> dict:
     """
@@ -105,7 +107,7 @@ def calculate_us_site_saturation(trials: list) -> dict:
 
     city_data = {}
     hospital_data = {}
-    
+
     active_statuses = ["recruiting", "not yet recruiting", "active, not recruiting", "enrolling by invitation"]
 
     for trial in trials:
@@ -113,20 +115,20 @@ def calculate_us_site_saturation(trials: list) -> dict:
         nct_id = str(trial.get("NCT ID", "Unknown"))
         if status not in active_statuses:
             continue
-            
+
         locations = trial.get("Locations", [])
         if isinstance(locations, list):
             for loc in locations:
                 country = str(loc.get("country", "")).strip().lower()
                 if country in ["united states", "united states of america", "us", "usa"]:
-                    
+
                     # Track Cities dynamically
                     city = str(loc.get("city", "")).strip().title()
                     if city:
                         if city not in city_data:
                             city_data[city] = 0
                         city_data[city] += 1
-                    
+
                     # Track Hospitals + NCT IDs
                     facility = str(loc.get("name", "")).strip()
                     if facility and "investigational site" not in facility.lower():
@@ -139,7 +141,7 @@ def calculate_us_site_saturation(trials: list) -> dict:
     if not city_data:
         return {"error": "No active US location data available in these trials."}
 
-    # DYNAMIC WHITESPACE LOGIC: 
+    # DYNAMIC WHITESPACE LOGIC:
     # Cities that appear in the data (proven infrastructure) but only have exactly 1 active trial (low competition).
     low_competition_cities = [city for city, count in city_data.items() if count == 1]
 
@@ -154,5 +156,5 @@ def calculate_us_site_saturation(trials: list) -> dict:
         "Disease_Target": "Supplied by user",
         "Highly_Saturated_US_Cities": dict(sorted(city_data.items(), key=lambda x: x[1], reverse=True)[:10]),
         "Most_Congested_Hospitals": top_hospitals_formatted,
-        "Low_Competition_Emerging_Hubs": low_competition_cities[:15] # Send up to 15 dynamic cities to AI
+        "Low_Competition_Emerging_Hubs": low_competition_cities[:15],
     }
