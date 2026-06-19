@@ -5,8 +5,8 @@ This module centralises every tuneable constant so that contributors
 can change behaviour without hunting through 2 500+ lines of app code.
 """
 
-# Default Gemini model used for intelligence summaries (Set to 2.5 Flash for safety/speed)
-DEFAULT_LLM_MODEL = "models/gemini-2.5-flash"
+# Default Gemini model used for intelligence summaries (Set to 3.1 Flash-Lite for safety/speed)
+DEFAULT_LLM_MODEL = "models/gemini-3.1-flash-lite-preview"
 
 # How many trials to send to the LLM in a single summarisation call
 MAX_TRIALS_FOR_SUMMARY = 10
@@ -16,9 +16,14 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 # Models exposed in the Streamlit sidebar selector
 GEMINI_MODEL_OPTIONS = {
-    "Gemini 2.5 Flash (Ultra-Fast & Safe)": "models/gemini-2.5-flash",
-    "Gemini 2.5 Pro (Deep Analysis)": "models/gemini-2.5-pro",
-    "Robotics 1.5 Preview (Experimental)": "models/gemini-robotics-er-1.5-preview",
+    # 1. The absolute newest, highest-throughput model (Best chance of bypassing traffic)
+    "Gemini 3.1 Flash-Lite (Ultra Fast)": "models/gemini-3.1-flash-lite-preview",
+    
+    # 2. The Next-Gen standard Flash
+    "Gemini 3.0 Flash Preview": "models/gemini-3-flash-preview",
+    
+    # 3. The older, stable lightweight model
+    "Gemini 2.5 Flash-Lite": "models/gemini-2.5-flash-lite",
 }
 
 # ── Model output token limits ──
